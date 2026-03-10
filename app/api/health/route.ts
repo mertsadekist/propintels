@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/db/prisma";
+import { execSync } from "child_process";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,54 @@ export async function GET() {
     }
   } else {
     checks.redis = { ok: false, detail: "⚠️ REDIS_URL not set" };
+  }
+
+  // ── Chrome / Puppeteer detection ──────────────────────────────────────────
+  try {
+    const chromium = (await import("@sparticuz/chromium")).default;
+    let sparticuzPath = "(error)";
+    let sparticuzErr = "";
+    try {
+      sparticuzPath = await chromium.executablePath();
+    } catch (e) {
+      sparticuzErr = e instanceof Error ? e.message : String(e);
+    }
+
+    // Check which system binaries exist
+    const systemPaths = [
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium",
+    ];
+    const found: string[] = [];
+    for (const p of systemPaths) {
+      try { execSync(`test -f ${p}`, { stdio: "ignore" }); found.push(p); } catch { /* not found */ }
+    }
+
+    // Try to get Chrome version if PUPPETEER_EXECUTABLE_PATH is set
+    let chromeVersion = "";
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      try {
+        chromeVersion = execSync(`${process.env.PUPPETEER_EXECUTABLE_PATH} --version`, { timeout: 5000 }).toString().trim();
+      } catch (e) {
+        chromeVersion = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+
+    checks.chrome = {
+      ok: !!(sparticuzPath && sparticuzPath !== "(error)") || found.length > 0 || !!process.env.PUPPETEER_EXECUTABLE_PATH,
+      detail: JSON.stringify({
+        sparticuzPath,
+        sparticuzErr: sparticuzErr || undefined,
+        systemChrome: found.length > 0 ? found : "none",
+        PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || "not set",
+        chromeVersion: chromeVersion || undefined,
+      }),
+    };
+  } catch (e) {
+    checks.chrome = { ok: false, detail: `@sparticuz/chromium import failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 
   const allOk = checks.env.ok && checks.database.ok;
