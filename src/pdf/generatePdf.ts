@@ -1,4 +1,5 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import crypto from "crypto";
 import { execSync } from "child_process";
 
@@ -9,12 +10,21 @@ export interface GeneratedPdf {
 }
 
 /** Resolve Chrome/Chromium executable path across environments */
-function resolveChromePath(): string | undefined {
-  // 1. Explicit env override (highest priority)
+async function resolveChromePath(): Promise<string | undefined> {
+  // 1. Explicit env override (highest priority — set in Hostinger panel)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
-  // 2. Common Linux paths (Render.com, Railway, VPS)
+
+  // 2. @sparticuz/chromium bundled binary (works on restricted Linux hosts)
+  try {
+    const path = await chromium.executablePath();
+    if (path) return path;
+  } catch {
+    // not available in this environment
+  }
+
+  // 3. Common Linux paths (VPS / dedicated server with Chrome installed)
   const linuxPaths = [
     "/usr/bin/google-chrome-stable",
     "/usr/bin/google-chrome",
@@ -30,25 +40,35 @@ function resolveChromePath(): string | undefined {
       // not found, continue
     }
   }
-  // 3. Let Puppeteer use its bundled browser
+
   return undefined;
 }
 
 export async function generatePdfFromHtml(html: string): Promise<GeneratedPdf> {
-  const executablePath = resolveChromePath();
+  const executablePath = await resolveChromePath();
+
+  if (!executablePath) {
+    throw new Error(
+      "No Chrome/Chromium browser found. Set PUPPETEER_EXECUTABLE_PATH env var or install Chrome on the server."
+    );
+  }
+
+  // @sparticuz/chromium provides hardened args for restricted environments
+  const args = [
+    ...chromium.args,
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-extensions",
+    "--run-all-compositor-stages-before-draw",
+  ];
 
   const browser = await puppeteer.launch({
     headless: true,
     executablePath,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-      "--disable-extensions",
-      "--run-all-compositor-stages-before-draw",
-    ],
+    args,
     timeout: 60_000,
   });
 
