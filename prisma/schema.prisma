@@ -341,8 +341,9 @@ model Report {
   leadId String
   status ReportStatus @default(QUEUED)
 
-  // Storage
-  storageKey     String?
+  // Storage — pdfData stores PDF binary in DB (no S3 needed)
+  pdfData        Bytes?  @db.LongBlob
+  storageKey     String? // legacy S3 key — kept for backward compat
   fileName       String?
   mimeType       String  @default("application/pdf")
   fileSize       Int?

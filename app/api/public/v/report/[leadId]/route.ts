@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/prisma";
-import { getSignedDownloadUrl } from "@/pdf/storage";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/public/v/report/[leadId]
+ *
+ * Public endpoint — no auth required (accessed via client-facing link).
+ * Streams the PDF directly from the database (no S3/R2 needed).
+ */
 export async function GET(
   _request: NextRequest,
   { params }: { params: { leadId: string } }
@@ -9,6 +16,13 @@ export async function GET(
   const report = await prisma.report.findFirst({
     where: { leadId: params.leadId },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      pdfData: true,
+      fileName: true,
+      fileSize: true,
+    },
   });
 
   if (!report) {
@@ -18,15 +32,32 @@ export async function GET(
     );
   }
 
-  if (report.status !== "READY" || !report.storageKey) {
+  // Report not ready yet
+  if (report.status !== "READY") {
     return NextResponse.json({
       data: { status: report.status, downloadUrl: null },
     });
   }
 
-  const downloadUrl = await getSignedDownloadUrl(report.storageKey);
+  // PDF stored in DB
+  if (report.pdfData) {
+    const buffer = Buffer.from(report.pdfData);
+    const fileName = report.fileName ?? `valuation-report-${params.leadId}.pdf`;
 
-  return NextResponse.json({
-    data: { status: "READY", downloadUrl },
-  });
+    return new NextResponse(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${fileName}"`,
+        "Content-Length": String(buffer.length),
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  }
+
+  // Fallback: no PDF data available
+  return NextResponse.json(
+    { error: { code: "NO_DATA", message: "PDF data not available" } },
+    { status: 404 }
+  );
 }

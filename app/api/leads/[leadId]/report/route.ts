@@ -81,11 +81,12 @@ export async function POST(
     const html = await renderReportHtml(lead.id);
     const { buffer, checksum, size } = await generatePdfFromHtml(html);
 
-    // Mark as READY (PDF returned directly — no S3 upload needed)
+    // Save PDF to DB + mark READY (no S3 needed)
     await prisma.report.update({
       where: { id: report.id },
       data: {
         status: "READY",
+        pdfData: new Uint8Array(buffer),
         fileSize: size,
         checksumSha256: checksum,
         generatedAt: new Date(),
