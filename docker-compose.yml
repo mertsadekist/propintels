@@ -1,0 +1,162 @@
+version: '3.9'
+
+services:
+  # ─────────────────────────────────────────────
+  # MySQL Database
+  # ─────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: ist_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ist_valuation}
+      MYSQL_USER: ${MYSQL_USER:-ist_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ist_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ist_network
+
+  # ─────────────────────────────────────────────
+  # Redis (BullMQ)
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ist_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispassword}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ist_network
+
+  # ─────────────────────────────────────────────
+  # Next.js Application
+  # ─────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ist_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "mysql://${MYSQL_USER:-ist_user}:${MYSQL_PASSWORD:-ist_password}@db:3306/${MYSQL_DATABASE:-ist_valuation}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-redispassword}@redis:6379"
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
+      S3_BUCKET: ${S3_BUCKET:-ist-reports}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      # Email / SMTP
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+    networks:
+      - ist_network
+
+  # ─────────────────────────────────────────────
+  # BullMQ PDF Worker
+  # ─────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: ist_worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "mysql://${MYSQL_USER:-ist_user}:${MYSQL_PASSWORD:-ist_password}@db:3306/${MYSQL_DATABASE:-ist_valuation}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-redispassword}@redis:6379"
+      S3_BUCKET: ${S3_BUCKET:-ist-reports}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NODE_ENV: production
+      PDF_QUEUE_CONCURRENCY: ${PDF_QUEUE_CONCURRENCY:-2}
+      # Email / SMTP (for report-ready client notifications)
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+    networks:
+      - ist_network
+
+  # ─────────────────────────────────────────────
+  # Database Migrator (run-once init container)
+  # ─────────────────────────────────────────────
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps
+    container_name: ist_migrator
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: "mysql://${MYSQL_USER:-ist_user}:${MYSQL_PASSWORD:-ist_password}@db:3306/${MYSQL_DATABASE:-ist_valuation}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ist_network
+    restart: "no"
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  ist_network:
+    driver: bridge

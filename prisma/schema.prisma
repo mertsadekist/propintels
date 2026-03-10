@@ -1,0 +1,404 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  APPOINTMENT_SET
+  WON
+  LOST
+  ARCHIVED
+}
+
+enum EntrySourceType {
+  LISTING
+  TRANSACTION
+}
+
+enum LinkStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
+}
+
+enum PropertyCategory {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
+enum PropertyType {
+  APARTMENT
+  VILLA
+  TOWNHOUSE
+  PENTHOUSE
+  DUPLEX
+  OFFICE
+  RETAIL
+  WAREHOUSE
+  LAND
+  OTHER
+}
+
+enum VerdictLabel {
+  BELOW_MARKET
+  ALIGNED
+  SLIGHTLY_ABOVE
+  ABOVE_MARKET
+  INSUFFICIENT_DATA
+}
+
+enum ReportStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+// ─────────────────────────────────────────
+// AUTH / RBAC
+// ─────────────────────────────────────────
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Relations
+  roles               UserRole[]
+  ownedProjects       Project[]            @relation("ProjectOwner")
+  assignedLeads       Lead[]               @relation("LeadAssignedAgent")
+  auditLogs           AuditLog[]           @relation("AuditActor")
+  valuationLinks      ValuationLink[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([status])
+  @@index([email])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        String   @unique // ADMIN | MANAGER | AGENT | VIEWER
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// PROJECTS & COMPARABLE ENTRIES
+// ─────────────────────────────────────────
+
+model Project {
+  id               String           @id @default(cuid())
+  name             String
+  location         String?
+  category         PropertyCategory @default(RESIDENTIAL)
+  defaultType      PropertyType?
+  isActive         Boolean          @default(true)
+  ownerId          String
+  areaTolerancePct Int?
+  currency         String?          @default("AED")
+  description      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  owner   User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  entries Entry[]
+  links   ValuationLink[]
+  leads   Lead[]
+
+  @@index([ownerId])
+  @@index([isActive])
+  @@index([location])
+}
+
+model Entry {
+  id         String          @id @default(cuid())
+  projectId  String
+  sourceType EntrySourceType
+
+  // Property descriptors
+  category      PropertyCategory @default(RESIDENTIAL)
+  propertyType  PropertyType
+  bedrooms      Int?
+  bathrooms     Int?
+  unitType      String?
+  portal        String?
+  locationLabel String?
+  createdDate   DateTime?
+  notes         String?  @db.Text
+
+  // Listing fields
+  areaSqft    Decimal? @db.Decimal(12, 2)
+  askPrice    Decimal? @db.Decimal(18, 2)
+  lowestPrice Decimal? @db.Decimal(18, 2)
+
+  // Transaction fields
+  transactionDate     DateTime?
+  transactionAreaSqft Decimal?  @db.Decimal(12, 2)
+  transactionPrice    Decimal?  @db.Decimal(18, 2)
+
+  // Computed PSF snapshots
+  askPsf         Decimal? @db.Decimal(18, 6)
+  lowPsf         Decimal? @db.Decimal(18, 6)
+  transactionPsf Decimal? @db.Decimal(18, 6)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, propertyType, bedrooms])
+  @@index([projectId, sourceType])
+  @@index([isActive])
+  @@index([transactionDate])
+}
+
+// ─────────────────────────────────────────
+// PUBLIC VALUATION LINKS
+// ─────────────────────────────────────────
+
+model ValuationLink {
+  id        String     @id @default(cuid())
+  projectId String
+  agentId   String?
+  tokenHash String     @unique
+  label     String?
+  status    LinkStatus @default(ACTIVE)
+  expiresAt DateTime?
+  maxUses   Int?
+  usedCount Int        @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agent   User?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  leads   Lead[]
+
+  @@index([projectId, status])
+  @@index([agentId])
+  @@index([expiresAt])
+  @@index([tokenHash])
+}
+
+// ─────────────────────────────────────────
+// LEADS & VALUATION RESULTS
+// ─────────────────────────────────────────
+
+model Lead {
+  id              String     @id @default(cuid())
+  linkId          String?
+  projectId       String
+  assignedAgentId String?
+  status          LeadStatus @default(NEW)
+
+  // Contact
+  fullName String
+  phone    String
+  email    String?
+
+  // Subject property
+  category     PropertyCategory @default(RESIDENTIAL)
+  propertyType PropertyType
+  bedrooms     Int?
+  bathrooms    Int?
+  unitType     String?
+  areaSqft     Decimal          @db.Decimal(12, 2)
+  clientPrice  Decimal          @db.Decimal(18, 2)
+  currency     String?          @default("AED")
+
+  // Metadata
+  ipAddress String?
+  userAgent String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  link            ValuationLink?  @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assignedAgent   User?           @relation("LeadAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  valuationResult ValuationResult?
+  reports         Report[]
+
+  @@index([projectId, createdAt])
+  @@index([assignedAgentId, status])
+  @@index([status])
+  @@index([linkId])
+}
+
+model ValuationResult {
+  id     String @id @default(cuid())
+  leadId String @unique
+
+  // Engine settings snapshot
+  rulesVersion     Int     @default(1)
+  areaTolerancePct Int?
+  outlierMethod    String?
+  minComps         Int?
+  benchmark        String?
+
+  // Client inputs
+  clientPsf Decimal @db.Decimal(18, 6)
+
+  // Listing aggregates
+  listingCount     Int?
+  listingMeanPsf   Decimal? @db.Decimal(18, 6)
+  listingMedianPsf Decimal? @db.Decimal(18, 6)
+  listingMinPsf    Decimal? @db.Decimal(18, 6)
+  listingMaxPsf    Decimal? @db.Decimal(18, 6)
+
+  // Transaction aggregates
+  transactionCount     Int?
+  transactionMeanPsf   Decimal? @db.Decimal(18, 6)
+  transactionMedianPsf Decimal? @db.Decimal(18, 6)
+  transactionMinPsf    Decimal? @db.Decimal(18, 6)
+  transactionMaxPsf    Decimal? @db.Decimal(18, 6)
+
+  // Recommended price range
+  recommendedLow  Decimal? @db.Decimal(18, 2)
+  recommendedMid  Decimal? @db.Decimal(18, 2)
+  recommendedHigh Decimal? @db.Decimal(18, 2)
+
+  // Verdict
+  verdict       VerdictLabel @default(INSUFFICIENT_DATA)
+  ratioToMarket Decimal?     @db.Decimal(18, 6)
+  confidence    Int          @default(0)
+
+  // JSON fields
+  explanations Json?
+  compsUsed    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([verdict])
+}
+
+// ─────────────────────────────────────────
+// REPORTS (PDF artifacts)
+// ─────────────────────────────────────────
+
+model Report {
+  id     String       @id @default(cuid())
+  leadId String
+  status ReportStatus @default(QUEUED)
+
+  // Storage
+  storageKey     String?
+  fileName       String?
+  mimeType       String  @default("application/pdf")
+  fileSize       Int?
+  checksumSha256 String?
+
+  // Error info
+  errorMessage String?
+
+  generatedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────
+
+model Setting {
+  id        String   @id @default(cuid())
+  scope     String
+  projectId String?
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, projectId, key])
+  @@index([key])
+  @@index([projectId])
+}
+
+// ─────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}

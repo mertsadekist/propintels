@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `Entry` MODIFY COLUMN `notes` LONGTEXT NULL;

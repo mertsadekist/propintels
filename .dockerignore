@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+
+# Node modules (installed inside container)
+node_modules
+npm-debug.log*
+
+# Environment files (NEVER in container)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Next.js build cache
+.next
+
+# Development tools
+.eslintcache
+*.log
+
+# Documentation
+Docs/
+README.md
+*.md
+
+# Test files
+__tests__/
+*.test.ts
+*.spec.ts
+coverage/
+
+# CI/CD
+.github/
+
+# Docker files themselves
+Dockerfile*
+docker-compose*

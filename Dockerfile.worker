@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────
+# Stage 1: deps
+# ─────────────────────────────────────────────
+FROM node:20-alpine AS deps
+
+RUN apk add --no-cache libc6-compat openssl chromium
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma/
+
+RUN npm ci
+RUN npx prisma generate
+
+# ─────────────────────────────────────────────
+# Stage 2: runner — PDF Worker
+# ─────────────────────────────────────────────
+FROM node:20-alpine AS runner
+
+RUN apk add --no-cache \
+  libc6-compat \
+  openssl \
+  chromium \
+  nss \
+  freetype \
+  harfbuzz \
+  ca-certificates \
+  ttf-freefont \
+  font-noto-emoji
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+RUN addgroup --system --gid 1001 worker
+RUN adduser --system --uid 1001 workeruser
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/prisma ./prisma
+
+COPY src/jobs ./src/jobs
+COPY src/pdf ./src/pdf
+COPY src/db ./src/db
+COPY src/valuation ./src/valuation
+COPY src/lib ./src/lib
+COPY src/config ./src/config
+COPY src/notifications ./src/notifications
+COPY tsconfig.json ./
+
+RUN npm install -g tsx
+
+RUN chown -R workeruser:worker /app
+
+USER workeruser
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD node -e "require('ioredis'); console.log('ok')" || exit 1
+
+CMD ["tsx", "src/jobs/worker.ts"]
