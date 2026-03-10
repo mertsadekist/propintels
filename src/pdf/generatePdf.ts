@@ -1,5 +1,6 @@
 import puppeteer from "puppeteer";
 import crypto from "crypto";
+import { execSync } from "child_process";
 
 export interface GeneratedPdf {
   buffer: Buffer;
@@ -7,12 +8,38 @@ export interface GeneratedPdf {
   size: number;
 }
 
+/** Resolve Chrome/Chromium executable path across environments */
+function resolveChromePath(): string | undefined {
+  // 1. Explicit env override (highest priority)
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  // 2. Common Linux paths (Render.com, Railway, VPS)
+  const linuxPaths = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/snap/bin/chromium",
+  ];
+  for (const p of linuxPaths) {
+    try {
+      execSync(`test -f ${p}`, { stdio: "ignore" });
+      return p;
+    } catch {
+      // not found, continue
+    }
+  }
+  // 3. Let Puppeteer use its bundled browser
+  return undefined;
+}
+
 export async function generatePdfFromHtml(html: string): Promise<GeneratedPdf> {
-  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  const executablePath = resolveChromePath();
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: executablePath || undefined,
+    executablePath,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
