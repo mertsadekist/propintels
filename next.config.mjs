@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  // ⚠️ "standalone" removed — incompatible with Hostinger managed Node.js hosting
+  // Hostinger expects: next build → next start  (standard mode)
 
-  experimental: {
-    serverComponentsExternalPackages: ["puppeteer-core", "puppeteer", "@sparticuz/chromium"],
-  },
+  serverExternalPackages: ["puppeteer", "puppeteer-core", "@sparticuz/chromium"],
 
   images: {
     remotePatterns: [
