@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // ⚠️ "standalone" removed — incompatible with Hostinger managed Node.js hosting
-  // Hostinger expects: next build → next start  (standard mode)
-
-  serverExternalPackages: ["puppeteer", "puppeteer-core", "@sparticuz/chromium"],
+  // Next.js 14 syntax for external packages (not bundled by webpack)
+  experimental: {
+    serverComponentsExternalPackages: ["puppeteer", "puppeteer-core", "@sparticuz/chromium"],
+  },
 
   images: {
     remotePatterns: [
