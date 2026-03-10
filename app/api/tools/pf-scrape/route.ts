@@ -107,12 +107,18 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       price = Number((hit.price as Record<string, unknown>).value);
     }
 
-    // Extract area
+    // Extract area — supports both object {value, unit} and plain number
     let areaSqft: number | null = null;
     if (hit.area && typeof hit.area === "object") {
       const areaObj = hit.area as Record<string, unknown>;
       if (typeof areaObj.value === "number") {
         areaSqft = Math.round(toSqft(areaObj.value, String(areaObj.unit ?? "")));
+      }
+    } else if (hit.size && typeof hit.size === "object") {
+      // PropertyFinder actual structure: size: { value: 687, unit: "sqft" }
+      const sizeObj = hit.size as Record<string, unknown>;
+      if (typeof sizeObj.value === "number") {
+        areaSqft = Math.round(toSqft(sizeObj.value, String(sizeObj.unit ?? "")));
       }
     } else if (typeof hit.size === "number") {
       areaSqft = Math.round(toSqft(hit.size, String(hit.size_unit ?? "")));
@@ -122,16 +128,21 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       areaSqft = hit.area;
     }
 
-    // Extract bedrooms
+    // Extract bedrooms — PropertyFinder returns strings e.g. "2", "0" (studio)
     let bedrooms: number | null = null;
     if (typeof hit.rooms === "number") bedrooms = hit.rooms;
+    else if (typeof hit.rooms === "string") { const v = parseInt(hit.rooms, 10); if (!isNaN(v)) bedrooms = v; }
     else if (typeof hit.bedrooms === "number") bedrooms = hit.bedrooms;
+    else if (typeof hit.bedrooms === "string") { const v = parseInt(hit.bedrooms, 10); if (!isNaN(v)) bedrooms = v; }
     else if (typeof hit.beds === "number") bedrooms = hit.beds;
+    else if (typeof hit.beds === "string") { const v = parseInt(hit.beds, 10); if (!isNaN(v)) bedrooms = v; }
 
-    // Extract bathrooms
+    // Extract bathrooms — PropertyFinder returns strings e.g. "1", "2"
     let bathrooms: number | null = null;
     if (typeof hit.baths === "number") bathrooms = hit.baths;
+    else if (typeof hit.baths === "string") { const v = parseInt(hit.baths, 10); if (!isNaN(v)) bathrooms = v; }
     else if (typeof hit.bathrooms === "number") bathrooms = hit.bathrooms;
+    else if (typeof hit.bathrooms === "string") { const v = parseInt(hit.bathrooms, 10); if (!isNaN(v)) bathrooms = v; }
 
     // Extract property type
     let rawType = "OTHER";
