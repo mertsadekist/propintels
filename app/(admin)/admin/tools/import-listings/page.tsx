@@ -20,6 +20,7 @@ import {
 
 interface ParsedListing {
   externalId: string;
+  reference: string | null;
   title: string;
   propertyType: string;
   bedrooms: number | null;
@@ -27,7 +28,13 @@ interface ParsedListing {
   areaSqft: number | null;
   askPrice: number | null;
   locationLabel: string;
+  fullLocation: string;
   isFeatured: boolean;
+  isVerified: boolean;
+  isSuperAgent: boolean;
+  furnished: string | null;
+  completionStatus: string | null;
+  listedDate: string | null;
 }
 
 interface Project {
@@ -47,6 +54,13 @@ function fmtN(n: number) {
 function calcPsf(askPrice: number | null, areaSqft: number | null): string {
   if (!askPrice || !areaSqft || areaSqft === 0) return "—";
   return fmtN(Math.round(askPrice / areaSqft));
+}
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-AE", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 const PROPERTY_TYPE_LABELS: Record<string, string> = {
@@ -498,6 +512,7 @@ export default function ImportListingsPage() {
                       <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">Price (AED)</th>
                       <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-600">PSF</th>
                       <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-600">Location</th>
+                      <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-600">Date Listed</th>
                       <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-600">AD</th>
                     </tr>
                   </thead>
@@ -544,6 +559,9 @@ export default function ImportListingsPage() {
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-500 max-w-[180px] truncate">
                           {l.locationLabel || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center text-xs text-gray-500 whitespace-nowrap">
+                          {fmtDate(l.listedDate)}
                         </td>
                         <td className="px-3 py-2 text-center">
                           {l.isFeatured && (
