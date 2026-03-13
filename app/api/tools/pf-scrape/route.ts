@@ -11,14 +11,21 @@ const bodySchema = z.object({
 
 interface ParsedListing {
   externalId: string;
+  reference: string | null;
   title: string;
   propertyType: string;
   bedrooms: number | null;
   bathrooms: number | null;
   areaSqft: number | null;
   askPrice: number | null;
-  locationLabel: string;
+  locationLabel: string;      // short location (community name)
+  fullLocation: string;       // full hierarchy e.g. "Business Bay, Dubai"
   isFeatured: boolean;
+  isVerified: boolean;
+  isSuperAgent: boolean;
+  furnished: string | null;   // "YES" | "NO" | "SEMI_FURNISHED"
+  completionStatus: string | null; // "completed" | "off_plan"
+  listedDate: string | null;  // ISO date string
 }
 
 // Map PropertyFinder property type slugs to our enum values
@@ -47,36 +54,31 @@ function toSqft(value: number, unit?: string): number {
 }
 
 // Recursively search for the listings array in the JSON tree
-// Returns the first array that looks like a property listing array
 function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
-  if (depth > 8 || !obj || typeof obj !== "object") return null;
+  if (depth > 10 || !obj || typeof obj !== "object") return null;
 
   if (Array.isArray(obj)) {
-    // Check if this looks like a listings array
     if (
       obj.length > 0 &&
       typeof obj[0] === "object" &&
       obj[0] !== null &&
-      ("price" in obj[0] || "asking_price" in obj[0]) &&
-      ("area" in obj[0] || "size" in obj[0] || "property_size" in obj[0])
+      ("price" in obj[0] || "asking_price" in obj[0] || "sale_price" in obj[0]) &&
+      (
+        "area" in obj[0] || "size" in obj[0] || "property_size" in obj[0] ||
+        "bedrooms" in obj[0] || "rooms" in obj[0] || "baths" in obj[0] ||
+        "bathrooms" in obj[0] || "property_type" in obj[0]
+      )
     ) {
       return obj as unknown[];
     }
     return null;
   }
 
-  // Known paths in PropertyFinder's Next.js data
   const record = obj as Record<string, unknown>;
   const knownPaths = [
-    "hits",
-    "properties",
-    "results",
-    "listings",
-    "data",
-    "items",
-    "search_result",
-    "searchResult",
-    "propertyList",
+    "hits", "properties", "results", "listings", "data",
+    "items", "search_result", "searchResult", "propertyList",
+    "cards", "props", "pageProps", "initialState", "initialProps",
   ];
 
   for (const key of knownPaths) {
@@ -96,55 +98,86 @@ function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
   return null;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function extractArea(val: unknown, unitHint?: unknown): number | null {
+  if (!val) return null;
+  if (typeof val === "object") {
+    const o = val as Record<string, unknown>;
+    const v = typeof o.value === "number" ? o.value
+      : typeof o.value === "string" ? parseFloat(o.value)
+      : typeof o.area === "number" ? o.area
+      : null;
+    if (v === null || isNaN(v as number)) return null;
+    const unit = String(o.unit ?? o.unit_en ?? unitHint ?? "");
+    return Math.round(toSqft(v as number, unit));
+  }
+  if (typeof val === "number") {
+    return Math.round(toSqft(val, String(unitHint ?? "")));
+  }
+  if (typeof val === "string") {
+    const n = parseFloat(val);
+    if (!isNaN(n)) return Math.round(toSqft(n, String(unitHint ?? "")));
+  }
+  return null;
+}
+
+function extractInt(v: unknown): number | null {
+  if (typeof v === "number") return isNaN(v) ? null : Math.round(v);
+  if (typeof v === "string") { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.value === "number") return Math.round(o.value);
+    if (typeof o.value === "string") { const n = parseInt(o.value, 10); return isNaN(n) ? null : n; }
+    if (typeof o.slug === "string") { const n = parseInt(o.slug, 10); return isNaN(n) ? null : n; }
+    if (typeof o.label === "string") { const n = parseInt(o.label, 10); return isNaN(n) ? null : n; }
+  }
+  return null;
+}
+
 // Parse a single hit object into ParsedListing
 function parseHit(hit: Record<string, unknown>): ParsedListing | null {
   try {
-    // Extract price (multiple possible field names)
+    // ── Price ────────────────────────────────────────────────────────────────
     let price: number | null = null;
     if (typeof hit.price === "number") price = hit.price;
-    else if (typeof hit.asking_price === "number") price = hit.asking_price;
+    else if (typeof hit.price === "string") { const n = parseFloat(hit.price); if (!isNaN(n)) price = n; }
     else if (hit.price && typeof hit.price === "object" && "value" in (hit.price as object)) {
       price = Number((hit.price as Record<string, unknown>).value);
+    } else if (typeof hit.asking_price === "number") price = hit.asking_price;
+    else if (typeof hit.asking_price === "string") { const n = parseFloat(hit.asking_price); if (!isNaN(n)) price = n; }
+    else if (typeof hit.sale_price === "number") price = hit.sale_price;
+    else if (hit.sale_price && typeof hit.sale_price === "object" && "value" in (hit.sale_price as object)) {
+      price = Number((hit.sale_price as Record<string, unknown>).value);
     }
 
-    // Extract area — supports both object {value, unit} and plain number
-    let areaSqft: number | null = null;
-    if (hit.area && typeof hit.area === "object") {
-      const areaObj = hit.area as Record<string, unknown>;
-      if (typeof areaObj.value === "number") {
-        areaSqft = Math.round(toSqft(areaObj.value, String(areaObj.unit ?? "")));
-      }
-    } else if (hit.size && typeof hit.size === "object") {
-      // PropertyFinder actual structure: size: { value: 687, unit: "sqft" }
-      const sizeObj = hit.size as Record<string, unknown>;
-      if (typeof sizeObj.value === "number") {
-        areaSqft = Math.round(toSqft(sizeObj.value, String(sizeObj.unit ?? "")));
-      }
-    } else if (typeof hit.size === "number") {
-      areaSqft = Math.round(toSqft(hit.size, String(hit.size_unit ?? "")));
-    } else if (typeof hit.property_size === "number") {
-      areaSqft = Math.round(toSqft(hit.property_size, String(hit.property_size_unit ?? "")));
-    } else if (typeof hit.area === "number") {
-      areaSqft = hit.area;
-    }
+    // ── Area ─────────────────────────────────────────────────────────────────
+    const areaSqft: number | null =
+      extractArea(hit.size, hit.size_unit) ??
+      extractArea(hit.area, hit.area_unit) ??
+      extractArea(hit.property_size, hit.property_size_unit) ??
+      extractArea(hit.floor_area, hit.floor_area_unit) ??
+      extractArea(hit.gross_area) ??
+      null;
 
-    // Extract bedrooms — PropertyFinder returns strings e.g. "2", "0" (studio)
-    let bedrooms: number | null = null;
-    if (typeof hit.rooms === "number") bedrooms = hit.rooms;
-    else if (typeof hit.rooms === "string") { const v = parseInt(hit.rooms, 10); if (!isNaN(v)) bedrooms = v; }
-    else if (typeof hit.bedrooms === "number") bedrooms = hit.bedrooms;
-    else if (typeof hit.bedrooms === "string") { const v = parseInt(hit.bedrooms, 10); if (!isNaN(v)) bedrooms = v; }
-    else if (typeof hit.beds === "number") bedrooms = hit.beds;
-    else if (typeof hit.beds === "string") { const v = parseInt(hit.beds, 10); if (!isNaN(v)) bedrooms = v; }
+    // ── Bedrooms ──────────────────────────────────────────────────────────────
+    const bedrooms: number | null =
+      extractInt(hit.rooms) ??
+      extractInt(hit.bedrooms) ??
+      extractInt(hit.bedrooms_value) ??
+      extractInt(hit.beds) ??
+      extractInt(hit.num_bedrooms) ??
+      null;
 
-    // Extract bathrooms — PropertyFinder returns strings e.g. "1", "2"
-    let bathrooms: number | null = null;
-    if (typeof hit.baths === "number") bathrooms = hit.baths;
-    else if (typeof hit.baths === "string") { const v = parseInt(hit.baths, 10); if (!isNaN(v)) bathrooms = v; }
-    else if (typeof hit.bathrooms === "number") bathrooms = hit.bathrooms;
-    else if (typeof hit.bathrooms === "string") { const v = parseInt(hit.bathrooms, 10); if (!isNaN(v)) bathrooms = v; }
+    // ── Bathrooms ─────────────────────────────────────────────────────────────
+    const bathrooms: number | null =
+      extractInt(hit.baths) ??
+      extractInt(hit.bathrooms) ??
+      extractInt(hit.bathrooms_value) ??
+      extractInt(hit.num_bathrooms) ??
+      null;
 
-    // Extract property type
+    // ── Property type ────────────────────────────────────────────────────
     let rawType = "OTHER";
     if (hit.property_type) {
       const pt = hit.property_type as Record<string, unknown>;
@@ -155,7 +188,7 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       rawType = hit.category;
     }
 
-    // Extract location
+    // ── Location — short label (community) ───────────────────────────────
     let locationLabel = "";
     if (hit.location) {
       const loc = hit.location as Record<string, unknown>;
@@ -166,10 +199,40 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       locationLabel = hit.sub_community;
     }
 
-    // Extract title
+    // ── Full location hierarchy from location_tree ────────────────────────
+    let fullLocation = locationLabel;
+    if (Array.isArray(hit.location_tree) && hit.location_tree.length > 0) {
+      const parts = (hit.location_tree as Array<Record<string, unknown>>)
+        .map((l) => String(l.name_en ?? l.name ?? ""))
+        .filter(Boolean);
+      if (parts.length > 0) fullLocation = parts.join(", ");
+    } else if (hit.location) {
+      const loc = hit.location as Record<string, unknown>;
+      const full = String(loc.full_name ?? "");
+      if (full) fullLocation = full;
+    }
+
+    // ── Title ─────────────────────────────────────────────────────────────
     const title = String(hit.title ?? hit.name ?? hit.headline ?? "");
 
-    // Is featured / AD
+    // ── Reference number ─────────────────────────────────────────────────
+    const reference = typeof hit.reference === "string" ? hit.reference : null;
+
+    // ── Listed date ───────────────────────────────────────────────────────
+    const listedDate =
+      typeof hit.listed_date === "string" ? hit.listed_date :
+      typeof hit.created_at === "string" ? hit.created_at :
+      typeof hit.published_at === "string" ? hit.published_at : null;
+
+    // ── Status badges ─────────────────────────────────────────────────────
+    const isVerified = hit.is_verified === true;
+    const isSuperAgent = hit.is_super_agent === true;
+
+    // ── Furnished & completion ────────────────────────────────────────────
+    const furnished = typeof hit.furnished === "string" ? hit.furnished : null;
+    const completionStatus = typeof hit.completion_status === "string" ? hit.completion_status : null;
+
+    // ── Is featured / AD ─────────────────────────────────────────────────
     const isFeatured =
       hit.is_featured === true ||
       hit.featured === true ||
@@ -179,8 +242,8 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
         "is_featured" in (hit.product_label as object) &&
         (hit.product_label as Record<string, unknown>).is_featured === true);
 
-    // Need at least a price or area to be useful
-    if (!price && !areaSqft) return null;
+    // Need at least a price to be useful
+    if (!price) return null;
 
     const id =
       typeof hit.id === "string" || typeof hit.id === "number"
@@ -189,6 +252,7 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
 
     return {
       externalId: id,
+      reference,
       title,
       propertyType: mapPropertyType(rawType),
       bedrooms,
@@ -196,7 +260,13 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       areaSqft,
       askPrice: price,
       locationLabel,
+      fullLocation,
       isFeatured: Boolean(isFeatured),
+      isVerified,
+      isSuperAgent,
+      furnished,
+      completionStatus,
+      listedDate,
     };
   } catch {
     return null;
@@ -218,7 +288,7 @@ export async function POST(request: NextRequest) {
 
   const { url } = parsed.data;
 
-  // Fetch the PropertyFinder page with browser-like headers
+  // Fetch with browser-like headers
   let html: string;
   try {
     const res = await fetch(url, {
@@ -236,18 +306,13 @@ export async function POST(request: NextRequest) {
         "Sec-Fetch-Site": "none",
         "Upgrade-Insecure-Requests": "1",
       },
-      // 15 second timeout
       signal: AbortSignal.timeout(15_000),
     });
 
-    // Cloudflare / bot detection check
     if (res.status === 403 || res.status === 429 || res.status === 503) {
       return NextResponse.json({
-        blocked: true,
-        listings: [],
-        total: 0,
-        message:
-          "تم حجب الطلب من قبل PropertyFinder (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
+        blocked: true, listings: [], total: 0,
+        message: "تم حجب الطلب من قبل PropertyFinder (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
       });
     }
 
@@ -267,7 +332,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check if response looks like a Cloudflare challenge
+  // Cloudflare challenge check
   if (
     html.includes("cf-browser-verification") ||
     html.includes("cf_chl_") ||
@@ -276,21 +341,16 @@ export async function POST(request: NextRequest) {
     (html.length < 5000 && !html.includes("__NEXT_DATA__"))
   ) {
     return NextResponse.json({
-      blocked: true,
-      listings: [],
-      total: 0,
-      message:
-        "تم حجب الطلب من قبل PropertyFinder (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
+      blocked: true, listings: [], total: 0,
+      message: "تم حجب الطلب من قبل PropertyFinder (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
     });
   }
 
-  // Extract __NEXT_DATA__ JSON
+  // Extract __NEXT_DATA__
   const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
   if (!match || !match[1]) {
     return NextResponse.json({
-      blocked: false,
-      listings: [],
-      total: 0,
+      blocked: false, listings: [], total: 0,
       message: "لم يتم العثور على بيانات مهيكلة في الصفحة. ربما تغيرت بنية الموقع.",
     });
   }
@@ -300,25 +360,25 @@ export async function POST(request: NextRequest) {
     nextData = JSON.parse(match[1]);
   } catch {
     return NextResponse.json({
-      blocked: false,
-      listings: [],
-      total: 0,
+      blocked: false, listings: [], total: 0,
       message: "فشل تحليل بيانات الصفحة (JSON parse error).",
     });
   }
 
-  // Find listings array in the data
   const hitsArray = findListingsArray(nextData);
   if (!hitsArray || hitsArray.length === 0) {
     return NextResponse.json({
-      blocked: false,
-      listings: [],
-      total: 0,
+      blocked: false, listings: [], total: 0,
       message: "لم يتم العثور على عقارات في هذه الصفحة.",
     });
   }
 
-  // Parse each hit
+  // In development, expose first raw hit for debugging missing fields
+  const debugFirstHit =
+    process.env.NODE_ENV === "development" && hitsArray[0]
+      ? (hitsArray[0] as Record<string, unknown>)
+      : undefined;
+
   const listings: ParsedListing[] = [];
   for (const hit of hitsArray) {
     if (hit && typeof hit === "object") {
@@ -331,5 +391,6 @@ export async function POST(request: NextRequest) {
     blocked: false,
     listings,
     total: listings.length,
+    ...(debugFirstHit ? { _debug_first_hit: debugFirstHit } : {}),
   });
 }
