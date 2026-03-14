@@ -88,12 +88,13 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   // Relations
-  roles               UserRole[]
-  ownedProjects       Project[]            @relation("ProjectOwner")
-  assignedLeads       Lead[]               @relation("LeadAssignedAgent")
-  auditLogs           AuditLog[]           @relation("AuditActor")
-  valuationLinks      ValuationLink[]
-  passwordResetTokens PasswordResetToken[]
+  roles                 UserRole[]
+  ownedProjects         Project[]             @relation("ProjectOwner")
+  assignedLeads         Lead[]                @relation("LeadAssignedAgent")
+  auditLogs             AuditLog[]            @relation("AuditActor")
+  valuationLinks        ValuationLink[]
+  passwordResetTokens   PasswordResetToken[]
+  specialistAssessments SpecialistAssessment[] @relation("SpecialistAssessments")
 
   @@index([status])
   @@index([email])
@@ -271,11 +272,12 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  link            ValuationLink?  @relation(fields: [linkId], references: [id], onDelete: SetNull)
-  project         Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  assignedAgent   User?           @relation("LeadAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
-  valuationResult ValuationResult?
-  reports         Report[]
+  link                 ValuationLink?       @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  project              Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assignedAgent        User?                @relation("LeadAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  valuationResult      ValuationResult?
+  reports              Report[]
+  specialistAssessment SpecialistAssessment?
 
   @@index([projectId, createdAt])
   @@index([assignedAgentId, status])
@@ -325,6 +327,10 @@ model ValuationResult {
   explanations Json?
   compsUsed    Json?
 
+  // Project-based valuation snapshot (null = not enough project-specific comps)
+  projectValuationData Json?
+  projectCompsUsed     Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -361,6 +367,27 @@ model Report {
 
   @@index([leadId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────
+// SPECIALIST ASSESSMENT
+// ─────────────────────────────────────────
+
+model SpecialistAssessment {
+  id             String   @id @default(cuid())
+  leadId         String   @unique
+  specialistId   String
+  estimatedPrice Decimal  @db.Decimal(18, 2)
+  estimatedPsf   Decimal  @db.Decimal(18, 6)
+  notes          String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lead       Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  specialist User @relation("SpecialistAssessments", fields: [specialistId], references: [id])
+
+  @@index([leadId])
+  @@index([specialistId])
 }
 
 // ─────────────────────────────────────────

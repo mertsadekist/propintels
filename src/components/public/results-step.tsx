@@ -6,6 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Download, Loader2, Phone, CheckCircle } from "lucide-react";
 
+export interface ProjectValuationSummary {
+  verdict: string;
+  confidence: number;
+  ratioToMarket?: number | null;
+  benchmarkPsf?: number | null;
+  recommendedLow?: number | null;
+  recommendedMid?: number | null;
+  recommendedHigh?: number | null;
+  listingCount: number;
+  transactionCount: number;
+}
+
 export interface ValuationResult {
   leadId: string;
   verdict: string;
@@ -18,6 +30,7 @@ export interface ValuationResult {
   explanations: string[];
   listings?: { count: number; medianPsf: number } | null;
   transactions?: { count: number; medianPsf: number } | null;
+  projectValuation?: ProjectValuationSummary | null;
   report: { id: string; status: string };
 }
 
@@ -196,6 +209,33 @@ export function ResultsStep({ result, property, currency }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Project Valuation (if available and different from area) */}
+      {result.projectValuation &&
+        result.projectValuation.verdict !== "INSUFFICIENT_DATA" &&
+        result.projectValuation.recommendedMid && (
+          <Card className="border border-indigo-200 bg-indigo-50">
+            <CardContent className="pt-5">
+              <p className="text-xs text-indigo-600 uppercase tracking-wide mb-3 font-medium">
+                Project-Level Comparison
+              </p>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-500">
+                  {fmt(result.projectValuation.recommendedLow ?? 0)}
+                </span>
+                <span className="text-lg font-bold text-indigo-700">
+                  {fmt(result.projectValuation.recommendedMid)}
+                </span>
+                <span className="text-sm text-gray-500">
+                  {fmt(result.projectValuation.recommendedHigh ?? 0)}
+                </span>
+              </div>
+              <p className="text-xs text-indigo-500 text-center">
+                Based on {(result.projectValuation.listingCount ?? 0) + (result.projectValuation.transactionCount ?? 0)} project-specific comparables
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Confidence */}
       <Card className="border border-gray-200">

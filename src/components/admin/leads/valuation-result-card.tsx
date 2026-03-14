@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VerdictBadge } from "@/components/admin/verdict-badge";
 import { formatCurrency } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { MapPin } from "lucide-react";
 
 interface Props {
   result: {
@@ -38,9 +39,13 @@ export function ValuationResultCard({ result }: Props) {
     <Card className="border border-gray-200">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Valuation Result</CardTitle>
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-gray-500" />
+            <CardTitle className="text-base">Area Valuation</CardTitle>
+          </div>
           <VerdictBadge verdict={result.verdict} size="md" />
         </div>
+        <p className="text-xs text-gray-400 mt-1">Compared against all area comparables</p>
       </CardHeader>
       <CardContent className="space-y-4">
 

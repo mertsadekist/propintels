@@ -3,6 +3,7 @@ import { prisma } from "@/db/prisma";
 import { hashToken } from "@/lib/token";
 import { publicSubmitSchema } from "@/validation/lead.schema";
 import { runValuationEngine } from "@/valuation/engine";
+import { valuationOutputToSnapshot } from "@/valuation/types";
 import { settingsRepo } from "@/db/repositories/settings.repo";
 import { enqueueReportGeneration } from "@/jobs/queue";
 import { checkRateLimitSync } from "@/lib/ratelimit";
@@ -75,16 +76,16 @@ export async function POST(
   const input = parsed.data;
 
   // 4. Load comparable entries
-  // Listings: project-scoped (hand-curated comps for this specific project)
-  // Transactions: area-scoped (all DLD transactions in the same location/area)
+  // Area valuation: project listings + ALL transactions in same location
+  // Project valuation: project listings + project-only transactions
   const projectLocation = link.project.location;
 
-  const [listingEntries, transactionEntries] = await Promise.all([
-    // Listings within the same project
+  const [listingEntries, areaTransactionEntries, projectTransactionEntries] = await Promise.all([
+    // Listings within the same project (shared by both passes)
     prisma.entry.findMany({
       where: { projectId: link.projectId, sourceType: "LISTING", isActive: true },
     }),
-    // Transactions across all projects in the same area (if location is set)
+    // Area transactions: all DLD transactions in the same location
     projectLocation
       ? prisma.entry.findMany({
           where: {
@@ -97,11 +98,25 @@ export async function POST(
       : prisma.entry.findMany({
           where: { projectId: link.projectId, sourceType: "TRANSACTION", isActive: true },
         }),
+    // Project-only transactions (for project valuation pass)
+    prisma.entry.findMany({
+      where: { projectId: link.projectId, sourceType: "TRANSACTION", isActive: true },
+    }),
   ]);
 
-  const dbEntries = [...listingEntries, ...transactionEntries];
+  // 5. Load valuation config
+  const config = await settingsRepo.getValuationRules(link.projectId);
 
-  const comparables: ComparableEntry[] = dbEntries.map((e) => ({
+  const clientInput = {
+    propertyType: input.propertyType,
+    bedrooms: input.bedrooms ?? null,
+    areaSqft: input.areaSqft,
+    clientPrice: input.clientPrice,
+    projectId: link.projectId,
+  };
+
+  // Helper to map DB entries to ComparableEntry
+  const toComparable = (e: typeof listingEntries[0]): ComparableEntry => ({
     id: e.id,
     projectId: e.projectId,
     sourceType: e.sourceType as "LISTING" | "TRANSACTION",
@@ -114,23 +129,22 @@ export async function POST(
     transactionPsf: e.transactionPsf ? Number(e.transactionPsf) : null,
     createdDate: e.createdDate,
     transactionDate: e.transactionDate,
-  }));
+  });
 
-  // 5. Load valuation config
-  const config = await settingsRepo.getValuationRules(link.projectId);
+  // 6a. Run AREA valuation engine (listings + area-wide transactions)
+  const areaComparables: ComparableEntry[] = [
+    ...listingEntries.map(toComparable),
+    ...areaTransactionEntries.map(toComparable),
+  ];
+  const areaResult = runValuationEngine(clientInput, areaComparables, config);
 
-  // 6. Run valuation engine
-  const engineResult = runValuationEngine(
-    {
-      propertyType: input.propertyType,
-      bedrooms: input.bedrooms ?? null,
-      areaSqft: input.areaSqft,
-      clientPrice: input.clientPrice,
-      projectId: link.projectId,
-    },
-    comparables,
-    config
-  );
+  // 6b. Run PROJECT valuation engine (project-only entries)
+  const projectComparables: ComparableEntry[] = [
+    ...listingEntries.map(toComparable),
+    ...projectTransactionEntries.map(toComparable),
+  ];
+  const projectResult = runValuationEngine(clientInput, projectComparables, config);
+  const projectSnapshot = valuationOutputToSnapshot(projectResult);
 
   // 7. Create lead + valuation result atomically
   const { lead, report } = await prisma.$transaction(async (tx) => {
@@ -158,30 +172,33 @@ export async function POST(
     await tx.valuationResult.create({
       data: {
         leadId: lead.id,
-        rulesVersion: engineResult.rulesVersion,
-        areaTolerancePct: engineResult.areaTolerancePct,
-        outlierMethod: engineResult.outlierMethod,
-        minComps: engineResult.minComps,
-        benchmark: engineResult.benchmark,
-        clientPsf: engineResult.clientPsf,
-        listingCount: engineResult.listings?.count ?? 0,
-        listingMeanPsf: engineResult.listings?.mean ?? null,
-        listingMedianPsf: engineResult.listings?.median ?? null,
-        listingMinPsf: engineResult.listings?.min ?? null,
-        listingMaxPsf: engineResult.listings?.max ?? null,
-        transactionCount: engineResult.transactions?.count ?? 0,
-        transactionMeanPsf: engineResult.transactions?.mean ?? null,
-        transactionMedianPsf: engineResult.transactions?.median ?? null,
-        transactionMinPsf: engineResult.transactions?.min ?? null,
-        transactionMaxPsf: engineResult.transactions?.max ?? null,
-        recommendedLow: engineResult.recommendedLow,
-        recommendedMid: engineResult.recommendedMid,
-        recommendedHigh: engineResult.recommendedHigh,
-        verdict: engineResult.verdict,
-        ratioToMarket: engineResult.ratioToMarket,
-        confidence: engineResult.confidence,
-        explanations: engineResult.explanations,
-        compsUsed: engineResult.compsUsed,
+        rulesVersion: areaResult.rulesVersion,
+        areaTolerancePct: areaResult.areaTolerancePct,
+        outlierMethod: areaResult.outlierMethod,
+        minComps: areaResult.minComps,
+        benchmark: areaResult.benchmark,
+        clientPsf: areaResult.clientPsf,
+        listingCount: areaResult.listings?.count ?? 0,
+        listingMeanPsf: areaResult.listings?.mean ?? null,
+        listingMedianPsf: areaResult.listings?.median ?? null,
+        listingMinPsf: areaResult.listings?.min ?? null,
+        listingMaxPsf: areaResult.listings?.max ?? null,
+        transactionCount: areaResult.transactions?.count ?? 0,
+        transactionMeanPsf: areaResult.transactions?.mean ?? null,
+        transactionMedianPsf: areaResult.transactions?.median ?? null,
+        transactionMinPsf: areaResult.transactions?.min ?? null,
+        transactionMaxPsf: areaResult.transactions?.max ?? null,
+        recommendedLow: areaResult.recommendedLow,
+        recommendedMid: areaResult.recommendedMid,
+        recommendedHigh: areaResult.recommendedHigh,
+        verdict: areaResult.verdict,
+        ratioToMarket: areaResult.ratioToMarket,
+        confidence: areaResult.confidence,
+        explanations: areaResult.explanations,
+        compsUsed: areaResult.compsUsed,
+        // Project valuation snapshot
+        projectValuationData: projectSnapshot as object,
+        projectCompsUsed: projectResult.compsUsed,
       },
     });
 
@@ -212,34 +229,41 @@ export async function POST(
     {
       data: {
         leadId: lead.id,
-        verdict: engineResult.verdict,
-        clientPsf: Math.round(engineResult.clientPsf),
-        listings: engineResult.listings
+        // Area valuation
+        verdict: areaResult.verdict,
+        clientPsf: Math.round(areaResult.clientPsf),
+        listings: areaResult.listings
           ? {
-              count: engineResult.listings.count,
-              medianPsf: Math.round(engineResult.listings.median),
-              meanPsf: Math.round(engineResult.listings.mean),
+              count: areaResult.listings.count,
+              medianPsf: Math.round(areaResult.listings.median),
+              meanPsf: Math.round(areaResult.listings.mean),
             }
           : null,
-        transactions: engineResult.transactions
+        transactions: areaResult.transactions
           ? {
-              count: engineResult.transactions.count,
-              medianPsf: Math.round(engineResult.transactions.median),
-              meanPsf: Math.round(engineResult.transactions.mean),
+              count: areaResult.transactions.count,
+              medianPsf: Math.round(areaResult.transactions.median),
+              meanPsf: Math.round(areaResult.transactions.mean),
             }
           : null,
-        recommendedLow: engineResult.recommendedLow
-          ? Math.round(engineResult.recommendedLow)
-          : null,
-        recommendedMid: engineResult.recommendedMid
-          ? Math.round(engineResult.recommendedMid)
-          : null,
-        recommendedHigh: engineResult.recommendedHigh
-          ? Math.round(engineResult.recommendedHigh)
-          : null,
-        ratioToMarket: engineResult.ratioToMarket,
-        confidence: engineResult.confidence,
-        explanations: engineResult.explanations,
+        recommendedLow: areaResult.recommendedLow ? Math.round(areaResult.recommendedLow) : null,
+        recommendedMid: areaResult.recommendedMid ? Math.round(areaResult.recommendedMid) : null,
+        recommendedHigh: areaResult.recommendedHigh ? Math.round(areaResult.recommendedHigh) : null,
+        ratioToMarket: areaResult.ratioToMarket,
+        confidence: areaResult.confidence,
+        explanations: areaResult.explanations,
+        // Project valuation
+        projectValuation: {
+          verdict: projectResult.verdict,
+          confidence: projectResult.confidence,
+          ratioToMarket: projectResult.ratioToMarket,
+          benchmarkPsf: projectResult.benchmarkPsf ? Math.round(projectResult.benchmarkPsf) : null,
+          recommendedLow: projectResult.recommendedLow ? Math.round(projectResult.recommendedLow) : null,
+          recommendedMid: projectResult.recommendedMid ? Math.round(projectResult.recommendedMid) : null,
+          recommendedHigh: projectResult.recommendedHigh ? Math.round(projectResult.recommendedHigh) : null,
+          listingCount: projectResult.listings?.count ?? 0,
+          transactionCount: projectResult.transactions?.count ?? 0,
+        },
         report: {
           id: report.id,
           status: "QUEUED",

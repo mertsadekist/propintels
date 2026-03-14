@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/auth/session";
 import { prisma } from "@/db/prisma";
 import { runValuationEngine } from "@/valuation/engine";
+import { valuationOutputToSnapshot } from "@/valuation/types";
 import { settingsRepo } from "@/db/repositories/settings.repo";
 import type { ComparableEntry } from "@/valuation/types";
 
@@ -29,9 +30,8 @@ export async function POST(
 
     const projectLocation = lead.project.location;
 
-    // Listings: project-scoped
-    // Transactions: area-scoped (same location across all projects)
-    const [listingEntries, transactionEntries] = await Promise.all([
+    // Load entries for both passes
+    const [listingEntries, areaTransactionEntries, projectTransactionEntries] = await Promise.all([
       prisma.entry.findMany({
         where: { projectId: lead.projectId, sourceType: "LISTING", isActive: true },
       }),
@@ -46,11 +46,22 @@ export async function POST(
         : prisma.entry.findMany({
             where: { projectId: lead.projectId, sourceType: "TRANSACTION", isActive: true },
           }),
+      prisma.entry.findMany({
+        where: { projectId: lead.projectId, sourceType: "TRANSACTION", isActive: true },
+      }),
     ]);
 
-    const dbEntries = [...listingEntries, ...transactionEntries];
+    const config = await settingsRepo.getValuationRules(lead.projectId);
 
-    const comparables: ComparableEntry[] = dbEntries.map((e) => ({
+    const clientInput = {
+      propertyType: lead.propertyType,
+      bedrooms: lead.bedrooms ?? null,
+      areaSqft: Number(lead.areaSqft),
+      clientPrice: Number(lead.clientPrice),
+      projectId: lead.projectId,
+    };
+
+    const toComparable = (e: typeof listingEntries[0]): ComparableEntry => ({
       id: e.id,
       projectId: e.projectId,
       sourceType: e.sourceType as "LISTING" | "TRANSACTION",
@@ -63,62 +74,71 @@ export async function POST(
       transactionPsf: e.transactionPsf ? Number(e.transactionPsf) : null,
       createdDate: e.createdDate,
       transactionDate: e.transactionDate,
-    }));
+    });
 
-    const config = await settingsRepo.getValuationRules(lead.projectId);
+    // Area valuation pass
+    const areaComparables: ComparableEntry[] = [
+      ...listingEntries.map(toComparable),
+      ...areaTransactionEntries.map(toComparable),
+    ];
+    const areaResult = runValuationEngine(clientInput, areaComparables, config);
 
-    const engineResult = runValuationEngine(
-      {
-        propertyType: lead.propertyType,
-        bedrooms: lead.bedrooms ?? null,
-        areaSqft: Number(lead.areaSqft),
-        clientPrice: Number(lead.clientPrice),
-        projectId: lead.projectId,
-      },
-      comparables,
-      config
-    );
+    // Project valuation pass
+    const projectComparables: ComparableEntry[] = [
+      ...listingEntries.map(toComparable),
+      ...projectTransactionEntries.map(toComparable),
+    ];
+    const projectResult = runValuationEngine(clientInput, projectComparables, config);
+    const projectSnapshot = valuationOutputToSnapshot(projectResult);
 
     // Update existing valuation result
     await prisma.valuationResult.update({
       where: { leadId: lead.id },
       data: {
-        rulesVersion: engineResult.rulesVersion,
-        areaTolerancePct: engineResult.areaTolerancePct,
-        outlierMethod: engineResult.outlierMethod,
-        minComps: engineResult.minComps,
-        benchmark: engineResult.benchmark,
-        clientPsf: engineResult.clientPsf,
-        listingCount: engineResult.listings?.count ?? 0,
-        listingMeanPsf: engineResult.listings?.mean ?? null,
-        listingMedianPsf: engineResult.listings?.median ?? null,
-        listingMinPsf: engineResult.listings?.min ?? null,
-        listingMaxPsf: engineResult.listings?.max ?? null,
-        transactionCount: engineResult.transactions?.count ?? 0,
-        transactionMeanPsf: engineResult.transactions?.mean ?? null,
-        transactionMedianPsf: engineResult.transactions?.median ?? null,
-        transactionMinPsf: engineResult.transactions?.min ?? null,
-        transactionMaxPsf: engineResult.transactions?.max ?? null,
-        recommendedLow: engineResult.recommendedLow,
-        recommendedMid: engineResult.recommendedMid,
-        recommendedHigh: engineResult.recommendedHigh,
-        verdict: engineResult.verdict,
-        ratioToMarket: engineResult.ratioToMarket,
-        confidence: engineResult.confidence,
-        explanations: engineResult.explanations,
-        compsUsed: engineResult.compsUsed,
+        rulesVersion: areaResult.rulesVersion,
+        areaTolerancePct: areaResult.areaTolerancePct,
+        outlierMethod: areaResult.outlierMethod,
+        minComps: areaResult.minComps,
+        benchmark: areaResult.benchmark,
+        clientPsf: areaResult.clientPsf,
+        listingCount: areaResult.listings?.count ?? 0,
+        listingMeanPsf: areaResult.listings?.mean ?? null,
+        listingMedianPsf: areaResult.listings?.median ?? null,
+        listingMinPsf: areaResult.listings?.min ?? null,
+        listingMaxPsf: areaResult.listings?.max ?? null,
+        transactionCount: areaResult.transactions?.count ?? 0,
+        transactionMeanPsf: areaResult.transactions?.mean ?? null,
+        transactionMedianPsf: areaResult.transactions?.median ?? null,
+        transactionMinPsf: areaResult.transactions?.min ?? null,
+        transactionMaxPsf: areaResult.transactions?.max ?? null,
+        recommendedLow: areaResult.recommendedLow,
+        recommendedMid: areaResult.recommendedMid,
+        recommendedHigh: areaResult.recommendedHigh,
+        verdict: areaResult.verdict,
+        ratioToMarket: areaResult.ratioToMarket,
+        confidence: areaResult.confidence,
+        explanations: areaResult.explanations,
+        compsUsed: areaResult.compsUsed,
+        projectValuationData: projectSnapshot as object,
+        projectCompsUsed: projectResult.compsUsed,
       },
     });
 
     return NextResponse.json({
       data: {
-        verdict: engineResult.verdict,
-        confidence: engineResult.confidence,
-        listingCount: engineResult.listings?.count ?? 0,
-        transactionCount: engineResult.transactions?.count ?? 0,
-        totalComps: (engineResult.listings?.count ?? 0) + (engineResult.transactions?.count ?? 0),
+        verdict: areaResult.verdict,
+        confidence: areaResult.confidence,
+        listingCount: areaResult.listings?.count ?? 0,
+        transactionCount: areaResult.transactions?.count ?? 0,
+        totalComps: (areaResult.listings?.count ?? 0) + (areaResult.transactions?.count ?? 0),
         areaScoped: !!projectLocation,
         area: projectLocation,
+        projectValuation: {
+          verdict: projectResult.verdict,
+          confidence: projectResult.confidence,
+          listingCount: projectResult.listings?.count ?? 0,
+          transactionCount: projectResult.transactions?.count ?? 0,
+        },
       },
     });
   } catch (err) {

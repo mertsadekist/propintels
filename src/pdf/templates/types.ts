@@ -23,6 +23,36 @@ export interface ComparableCompact {
   transactionPsf?: number | null;
 }
 
+export interface ValuationBlock {
+  count: number;
+  medianPsf: number;
+  meanPsf: number;
+  minPsf: number;
+  maxPsf: number;
+}
+
+export interface ProjectValuationReport {
+  verdict: string;
+  confidence: number;
+  ratioToMarket: number | null;
+  benchmarkPsf: number | null;
+  recommendedLow: number | null;
+  recommendedMid: number | null;
+  recommendedHigh: number | null;
+  listingCount: number;
+  transactionCount: number;
+  listingComps: ComparableCompact[];
+  transactionComps: ComparableCompact[];
+}
+
+export interface SpecialistAssessmentReport {
+  estimatedPrice: number;
+  estimatedPsf: number;
+  notes: string;
+  specialistName: string;
+  assessedAt: string; // ISO date string
+}
+
 export interface ReportData {
   leadId: string;
   projectName: string;
@@ -32,27 +62,23 @@ export interface ReportData {
   clientPrice: number;
   propertyType: string;
   bedrooms?: number | null;
+
+  // Area valuation (primary / existing)
   verdict: string;
   confidence: number;
   ratioToMarket?: number | null;
   recommendedLow?: number | null;
   recommendedMid?: number | null;
   recommendedHigh?: number | null;
-  listings?: {
-    count: number;
-    medianPsf: number;
-    meanPsf: number;
-    minPsf: number;
-    maxPsf: number;
-  } | null;
-  transactions?: {
-    count: number;
-    medianPsf: number;
-    meanPsf: number;
-    minPsf: number;
-    maxPsf: number;
-  } | null;
+  listings?: ValuationBlock | null;
+  transactions?: ValuationBlock | null;
   listingComps: ComparableCompact[];
   transactionComps: ComparableCompact[];
   explanations: string[];
+
+  // Project valuation (optional)
+  projectValuation?: ProjectValuationReport | null;
+
+  // Specialist assessment (optional)
+  specialistAssessment?: SpecialistAssessmentReport | null;
 }

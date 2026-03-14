@@ -80,6 +80,11 @@ export const leadsRepo = {
         link: { select: { id: true, label: true } },
         assignedAgent: { select: { id: true, name: true, email: true } },
         valuationResult: true,
+        specialistAssessment: {
+          include: {
+            specialist: { select: { id: true, name: true, email: true } },
+          },
+        },
         reports: {
           orderBy: { createdAt: "desc" },
           take: 5,

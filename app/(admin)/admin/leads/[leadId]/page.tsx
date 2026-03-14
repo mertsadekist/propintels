@@ -4,11 +4,14 @@ import { cookies } from "next/headers";
 import { ArrowLeft, Phone, Mail, Building } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValuationResultCard } from "@/components/admin/leads/valuation-result-card";
+import { ProjectValuationCard } from "@/components/admin/leads/project-valuation-card";
+import { SpecialistAssessmentCard } from "@/components/admin/leads/specialist-assessment-card";
 import { LeadStatusSelector } from "@/components/admin/leads/lead-status-selector";
 import { AssignAgentSection } from "@/components/admin/leads/assign-agent-section";
 import { ReportDownloadButton } from "@/components/admin/leads/report-download-button";
 import { RevalueButton } from "@/components/admin/leads/revalue-button";
 import { formatCurrency } from "@/lib/utils";
+import type { ValuationSnapshot } from "@/valuation/types";
 
 async function getLead(leadId: string) {
   const cookieStore = cookies();
@@ -33,9 +36,16 @@ export default async function LeadDetailPage({
   if (!lead) notFound();
 
   const result = lead.valuationResult;
+  const areaSqft = Number(lead.areaSqft);
+
+  // Parse the project valuation snapshot stored as JSON
+  const projectSnapshot: ValuationSnapshot | null =
+    result?.projectValuationData
+      ? (result.projectValuationData as ValuationSnapshot)
+      : null;
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-6xl">
       {/* Back */}
       <Link
         href="/admin/leads"
@@ -56,21 +66,37 @@ export default async function LeadDetailPage({
         <ReportDownloadButton leadId={lead.id} reports={lead.reports ?? []} />
       </div>
 
+      {/* ── Triple Valuation Section ── */}
+      {result && (
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Valuation Summary
+            </h2>
+            <RevalueButton leadId={lead.id} />
+          </div>
+
+          {/* 3 cards in a row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* 1. Area Valuation */}
+            <ValuationResultCard result={result} areaSqft={areaSqft} />
+
+            {/* 2. Project Valuation */}
+            <ProjectValuationCard snapshot={projectSnapshot} />
+
+            {/* 3. Specialist Assessment */}
+            <SpecialistAssessmentCard
+              leadId={lead.id}
+              areaSqft={areaSqft}
+              assessment={lead.specialistAssessment ?? null}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: details */}
+        {/* Left column: property details */}
         <div className="lg:col-span-2 space-y-4">
-
-          {/* Valuation Result */}
-          {result && (
-            <div className="space-y-2">
-              <ValuationResultCard result={result} areaSqft={Number(lead.areaSqft)} />
-              {/* Re-run button: always visible so admin can refresh with latest comps */}
-              <div className="flex justify-end">
-                <RevalueButton leadId={lead.id} />
-              </div>
-            </div>
-          )}
-
           {/* Property Details */}
           <Card className="border border-gray-200">
             <CardHeader className="pb-3">
@@ -82,11 +108,11 @@ export default async function LeadDetailPage({
                   { label: "Property Type", value: lead.propertyType },
                   { label: "Bedrooms", value: lead.bedrooms ?? "—" },
                   { label: "Bathrooms", value: lead.bathrooms ?? "—" },
-                  { label: "Area", value: `${Number(lead.areaSqft).toLocaleString()} sqft` },
+                  { label: "Area", value: `${areaSqft.toLocaleString()} sqft` },
                   { label: "Asking Price", value: formatCurrency(Number(lead.clientPrice)) },
                   {
                     label: "Ask PSF",
-                    value: `${Math.round(Number(lead.clientPrice) / Number(lead.areaSqft)).toLocaleString()} AED/sqft`,
+                    value: `${Math.round(Number(lead.clientPrice) / areaSqft).toLocaleString()} AED/sqft`,
                   },
                   { label: "Unit Type", value: lead.unitType ?? "—" },
                   { label: "Category", value: lead.category ?? "—" },
@@ -99,12 +125,10 @@ export default async function LeadDetailPage({
               </dl>
             </CardContent>
           </Card>
-
         </div>
 
         {/* Right column: CRM actions */}
         <div className="space-y-4">
-
           {/* Contact Info */}
           <Card className="border border-gray-200">
             <CardHeader className="pb-3">
