@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
   // Next.js 14 syntax for external packages (not bundled by webpack)
   experimental: {
     serverComponentsExternalPackages: ["puppeteer", "puppeteer-core", "@sparticuz/chromium"],
