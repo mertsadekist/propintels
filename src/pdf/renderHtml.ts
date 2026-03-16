@@ -54,16 +54,34 @@ export async function renderReportHtml(leadId: string): Promise<string> {
     include: {
       project: true,
       valuationResult: true,
-      specialistAssessment: {
-        include: {
-          specialist: { select: { name: true } },
-        },
-      },
     },
   });
 
   if (!lead || !lead.valuationResult) {
     throw new Error(`Lead or valuation result not found for leadId: ${leadId}`);
+  }
+
+  // Load specialist assessment separately with error handling
+  // (table may not exist yet if db push hasn't been run on the server)
+  let rawSpecialistAssessment: {
+    estimatedPrice: { toNumber(): number };
+    estimatedPsf: { toNumber(): number };
+    notes: string;
+    updatedAt: Date;
+    specialist: { name: string };
+  } | null = null;
+  try {
+    const withAssessment = await prisma.lead.findUnique({
+      where: { id: leadId },
+      include: {
+        specialistAssessment: {
+          include: { specialist: { select: { name: true } } },
+        },
+      },
+    });
+    rawSpecialistAssessment = withAssessment?.specialistAssessment ?? null;
+  } catch {
+    // SpecialistAssessment table may not exist yet — skip gracefully
   }
 
   const result = lead.valuationResult;
@@ -109,13 +127,13 @@ export async function renderReportHtml(leadId: string): Promise<string> {
   }
 
   // Specialist assessment
-  const specialistData = lead.specialistAssessment
+  const specialistData = rawSpecialistAssessment
     ? {
-        estimatedPrice: Number(lead.specialistAssessment.estimatedPrice),
-        estimatedPsf: Number(lead.specialistAssessment.estimatedPsf),
-        notes: lead.specialistAssessment.notes,
-        specialistName: lead.specialistAssessment.specialist.name,
-        assessedAt: lead.specialistAssessment.updatedAt.toISOString(),
+        estimatedPrice: Number(rawSpecialistAssessment.estimatedPrice),
+        estimatedPsf: Number(rawSpecialistAssessment.estimatedPsf),
+        notes: rawSpecialistAssessment.notes,
+        specialistName: rawSpecialistAssessment.specialist.name,
+        assessedAt: rawSpecialistAssessment.updatedAt.toISOString(),
       }
     : null;
 
