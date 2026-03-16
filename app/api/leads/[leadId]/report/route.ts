@@ -73,39 +73,65 @@ export async function POST(
         },
       });
 
+  const safeName = lead.fullName.replace(/[^a-zA-Z0-9\u0600-\u06FF\s-]/g, "").replace(/\s+/g, "-");
+  const dateStr = new Date().toISOString().slice(0, 10);
+
   try {
     // Dynamically import to avoid build-time issues with native modules
     const { renderReportHtml } = await import("@/pdf/renderHtml");
-    const { generatePdfFromHtml } = await import("@/pdf/generatePdf");
-
     const html = await renderReportHtml(lead.id);
-    const { buffer, checksum, size } = await generatePdfFromHtml(html);
 
-    // Save PDF to DB + mark READY (no S3 needed)
-    await prisma.report.update({
-      where: { id: report.id },
-      data: {
-        status: "READY",
-        pdfData: new Uint8Array(buffer),
-        fileSize: size,
-        checksumSha256: checksum,
-        generatedAt: new Date(),
-      },
-    });
+    // Try PDF generation — fall back to HTML if Chrome is unavailable
+    let pdfBuffer: Buffer | null = null;
+    try {
+      const { generatePdfFromHtml } = await import("@/pdf/generatePdf");
+      const { buffer, checksum, size } = await generatePdfFromHtml(html);
+      pdfBuffer = buffer;
 
-    const safeName = lead.fullName.replace(/[^a-zA-Z0-9\u0600-\u06FF\s-]/g, "").replace(/\s+/g, "-");
-    const fileName = `valuation-report-${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      // Save PDF to DB + mark READY
+      await prisma.report.update({
+        where: { id: report.id },
+        data: {
+          status: "READY",
+          pdfData: new Uint8Array(buffer),
+          fileSize: size,
+          checksumSha256: checksum,
+          generatedAt: new Date(),
+        },
+      });
+    } catch (pdfErr) {
+      console.warn("[report/POST] Chrome unavailable, falling back to HTML:", pdfErr);
+      // Mark report as failed in DB but still return HTML to the user
+      await prisma.report.update({
+        where: { id: report.id },
+        data: {
+          status: "FAILED",
+          errorMessage: pdfErr instanceof Error ? pdfErr.message : "Chrome unavailable",
+        },
+      });
+    }
 
-    return new NextResponse(new Uint8Array(buffer), {
+    if (pdfBuffer) {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="valuation-report-${safeName}-${dateStr}.pdf"`,
+          "Content-Length": String(pdfBuffer.length),
+        },
+      });
+    }
+
+    // HTML fallback — user can open in browser and print to PDF
+    return new NextResponse(html, {
       status: 200,
       headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
-        "Content-Length": String(buffer.length),
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Disposition": `attachment; filename="valuation-report-${safeName}-${dateStr}.html"`,
       },
     });
   } catch (err) {
-    console.error("[report/POST] PDF generation failed:", err);
+    console.error("[report/POST] Report generation failed:", err);
 
     await prisma.report.update({
       where: { id: report.id },
@@ -119,8 +145,7 @@ export async function POST(
       {
         error: {
           code: "GENERATION_FAILED",
-          message: err instanceof Error ? err.message : "PDF generation failed",
-          hint: "Check that Chrome/Chromium is accessible. Set PUPPETEER_EXECUTABLE_PATH in environment variables if needed.",
+          message: err instanceof Error ? err.message : "Report generation failed",
         },
       },
       { status: 500 }
