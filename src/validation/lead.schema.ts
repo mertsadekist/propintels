@@ -13,7 +13,7 @@ export const publicSubmitSchema = z.object({
   bathrooms: z.number().int().min(0).max(20).optional(),
   unitType: z.string().max(100).optional(),
   areaSqft: z.number().positive().max(100000),
-  clientPrice: z.number().positive().max(1_000_000_000),
+  clientPrice: z.number().positive().max(999_000_000_000),
   currency: z.string().length(3).default("AED"),
   captchaToken: z.string().optional(),
 });
