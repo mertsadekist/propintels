@@ -120,6 +120,7 @@ export async function POST(
         error: {
           code: "GENERATION_FAILED",
           message: err instanceof Error ? err.message : "PDF generation failed",
+          hint: "Check that Chrome/Chromium is accessible. Set PUPPETEER_EXECUTABLE_PATH in environment variables if needed.",
         },
       },
       { status: 500 }

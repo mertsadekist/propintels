@@ -19,7 +19,11 @@ async function resolveChromePath(): Promise<string | undefined> {
   // 2. @sparticuz/chromium bundled binary (works on restricted Linux hosts)
   try {
     const path = await chromium.executablePath();
-    if (path) return path;
+    if (path) {
+      // Ensure the binary is executable (may not be after npm install on shared hosting)
+      try { execSync(`chmod +x "${path}"`, { stdio: "ignore" }); } catch { /* ignore */ }
+      return path;
+    }
   } catch {
     // not available in this environment
   }

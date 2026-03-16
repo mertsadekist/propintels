@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Download, Loader2, Phone, CheckCircle } from "lucide-react";
+import { Phone, CheckCircle } from "lucide-react";
 
 export interface ProjectValuationSummary {
   verdict: string;
@@ -94,32 +93,10 @@ interface Props {
 }
 
 export function ResultsStep({ result, property, currency }: Props) {
-  const [isDownloading, setIsDownloading] = useState(false);
   const verdict = VERDICT_CONFIG[result.verdict] ?? VERDICT_CONFIG.INSUFFICIENT_DATA;
 
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-AE", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
-
-  async function handleDownloadReport() {
-    if (!result.leadId) return;
-    setIsDownloading(true);
-
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const res = await fetch(`/api/public/v/report/${result.leadId}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data?.downloadUrl) {
-          window.open(json.data.downloadUrl, "_blank");
-          setIsDownloading(false);
-          return;
-        }
-      }
-    }
-
-    setIsDownloading(false);
-    alert("Report is taking longer than expected. Please try again in a moment.");
-  }
 
   return (
     <div className="space-y-4">
@@ -267,34 +244,19 @@ export function ResultsStep({ result, property, currency }: Props) {
 
       {/* Actions */}
       <div className="space-y-3">
-        <Button
-          className="w-full"
-          size="lg"
-          onClick={handleDownloadReport}
-          disabled={isDownloading}
-          variant="outline"
-        >
-          {isDownloading ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparing Report...</>
-          ) : (
-            <><Download className="mr-2 h-4 w-4" />Download PDF Report</>
-          )}
-        </Button>
-
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2 text-sm text-blue-700">
+          <CheckCircle className="h-4 w-4 flex-shrink-0 text-blue-500" />
+          <span>Your valuation report has been saved. A specialist will reach out to you shortly.</span>
+        </div>
         <div className="p-4 bg-[#0B1F3B] rounded-lg text-white text-center">
           <p className="text-sm font-medium mb-2">Speak with our expert team</p>
           <a href="tel:+97140000000">
-            <Button variant="outline" size="sm" className="border-white text-white hover:bg-white hover:text-[#0B1F3B]">
+            <Button variant="outline" size="sm" className="bg-transparent border-white text-white hover:bg-white hover:text-[#0B1F3B]">
               <Phone className="mr-2 h-4 w-4" />
               Call Now
             </Button>
           </a>
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 text-xs text-gray-400 justify-center">
-        <CheckCircle className="h-3.5 w-3.5 text-green-400" />
-        Report saved to your lead profile. Our team will be in touch.
       </div>
     </div>
   );
