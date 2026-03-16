@@ -251,7 +251,7 @@ export function ResultsStep({ result, property, currency }: Props) {
         <div className="p-4 bg-[#0B1F3B] rounded-lg text-white text-center">
           <p className="text-sm font-medium mb-2">Speak with our expert team</p>
           <a href="tel:+97140000000">
-            <Button variant="outline" size="sm" className="bg-transparent border-white text-white hover:bg-white hover:text-[#0B1F3B]">
+            <Button variant="outline" size="sm" className="!bg-transparent border-white text-white hover:!bg-white hover:text-[#0B1F3B]">
               <Phone className="mr-2 h-4 w-4" />
               Call Now
             </Button>

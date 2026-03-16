@@ -45,6 +45,23 @@ async function resolveChromePath(): Promise<string | undefined> {
     }
   }
 
+  // 4. Full puppeteer package Chrome (downloaded automatically during npm install)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const puppeteerFull = await import("puppeteer") as any;
+    const instance = puppeteerFull.default ?? puppeteerFull;
+    const path: string | undefined =
+      typeof instance.executablePath === "function"
+        ? instance.executablePath()
+        : undefined;
+    if (path) {
+      try { execSync(`chmod +x "${path}"`, { stdio: "ignore" }); } catch { /* ignore */ }
+      return path;
+    }
+  } catch {
+    // puppeteer full not available or executablePath failed
+  }
+
   return undefined;
 }
 
