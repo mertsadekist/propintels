@@ -219,7 +219,7 @@ model ValuationLink {
   id        String     @id @default(cuid())
   projectId String
   agentId   String?
-  tokenHash String     @unique
+  tokenHash String?    @unique
   label     String?
   status    LinkStatus @default(ACTIVE)
   expiresAt DateTime?
@@ -235,7 +235,6 @@ model ValuationLink {
   @@index([projectId, status])
   @@index([agentId])
   @@index([expiresAt])
-  @@index([tokenHash])
 }
 
 // ─────────────────────────────────────────

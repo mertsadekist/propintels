@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/prisma";
-import { hashToken } from "@/lib/token";
 import { publicSubmitSchema } from "@/validation/lead.schema";
 import { runValuationEngine } from "@/valuation/engine";
 import { valuationOutputToSnapshot } from "@/valuation/types";
@@ -29,9 +28,8 @@ export async function POST(
   }
 
   // 2. Validate token
-  const tokenHash = hashToken(params.token);
   const link = await prisma.valuationLink.findUnique({
-    where: { tokenHash },
+    where: { id: params.token },
     include: { project: true },
   });
 

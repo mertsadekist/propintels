@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/auth/session";
 import { prisma } from "@/db/prisma";
 import { createLinkSchema } from "@/validation/link.schema";
-import { generateToken, hashToken } from "@/lib/token";
 import { logAudit } from "@/audit/logger";
 
 export async function GET(
@@ -58,14 +57,11 @@ export async function POST(
     );
   }
 
-  const rawToken = generateToken();
-  const tokenHash = hashToken(rawToken);
-
   const link = await prisma.valuationLink.create({
     data: {
       projectId: params.projectId,
       agentId: session.user.id,
-      tokenHash,
+      tokenHash: null,
       label: parsed.data.label ?? null,
       expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
       maxUses: parsed.data.maxUses ?? null,
@@ -82,16 +78,15 @@ export async function POST(
   });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const publicUrl = `${appUrl}/v/${rawToken}`;
+  const publicUrl = `${appUrl}/v/${link.id}`;
 
   return NextResponse.json(
     {
       data: {
         ...link,
-        token: rawToken,
+        token: link.id,
         publicUrl,
       },
-      message: "Save this token — it will not be shown again",
     },
     { status: 201 }
   );

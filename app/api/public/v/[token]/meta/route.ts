@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/prisma";
-import { hashToken } from "@/lib/token";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { token: string } }
 ) {
-  const tokenHash = hashToken(params.token);
-
   const link = await prisma.valuationLink.findUnique({
-    where: { tokenHash },
+    where: { id: params.token },
     include: {
       project: {
         select: {
