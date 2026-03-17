@@ -19,13 +19,34 @@ export default function LinksPage({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { links, isLoading, mutate } = useLinks(params.projectId);
 
+  async function copyToClipboard(text: string): Promise<void> {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    // Fallback for HTTP (non-secure contexts)
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
+
   async function copyUrl(linkId: string) {
     const baseUrl = window.location.origin;
     const url = `${baseUrl}/v/${linkId}`;
-    await navigator.clipboard.writeText(url);
-    setCopiedId(linkId);
-    setTimeout(() => setCopiedId(null), 2000);
-    toast.success("Link copied to clipboard");
+    try {
+      await copyToClipboard(url);
+      setCopiedId(linkId);
+      setTimeout(() => setCopiedId(null), 2000);
+      toast.success("Link copied to clipboard");
+    } catch {
+      toast.error("Failed to copy link");
+    }
   }
 
   async function toggleLinkStatus(linkId: string, currentStatus: string) {

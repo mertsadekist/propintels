@@ -59,12 +59,33 @@ export function CreateLinkDialog({ open, onOpenChange, projectId, onSuccess }: P
     }
   }
 
+  async function copyToClipboard(text: string): Promise<void> {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    // Fallback for HTTP (non-secure contexts)
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
+
   async function copyUrl() {
     if (!createdLink) return;
-    await navigator.clipboard.writeText(createdLink.publicUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("URL copied!");
+    try {
+      await copyToClipboard(createdLink.publicUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("URL copied!");
+    } catch {
+      toast.error("Failed to copy URL");
+    }
   }
 
   function handleClose() {
