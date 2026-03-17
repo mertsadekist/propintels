@@ -1,60 +1,70 @@
 # IST Valuation Platform
 
-> منصة متكاملة لتقييم العقارات في الوقت الفعلي، تتيح للمطورين العقاريين والوكلاء توليد تقييمات فورية مبنية على بيانات السوق الفعلية (قوائم البيع وسجلات DLD)، مع لوحة إدارة احترافية وتقارير PDF.
+> A full-stack real-estate valuation platform that lets property developers and agents generate instant, data-driven valuations based on live market comparables (listings + DLD transactions), complete with an admin dashboard, automated PDF reports, and a four-tier role system.
 
 ---
 
-## المحتويات
+## Table of Contents
 
-1. [نظرة عامة](#نظرة-عامة)
-2. [المكدس التقني](#المكدس-التقني)
-3. [هيكل قاعدة البيانات](#هيكل-قاعدة-البيانات)
-4. [محرك التقييم — المعادلات الرياضية](#محرك-التقييم--المعادلات-الرياضية)
-5. [تدفق التقييم الكامل](#تدفق-التقييم-الكامل)
-6. [الأدوار والصلاحيات RBAC](#الأدوار-والصلاحيات-rbac)
-7. [روابط التقييم](#روابط-التقييم)
-8. [توليد تقارير PDF](#توليد-تقارير-pdf)
-9. [واجهات API الكاملة](#واجهات-api-الكاملة)
-10. [لوحة الإدارة](#لوحة-الإدارة)
-11. [متغيرات البيئة](#متغيرات-البيئة)
-12. [التثبيت والتشغيل](#التثبيت-والتشغيل)
-13. [بنية الملفات](#بنية-الملفات)
+1. [Overview](#overview)
+2. [Tech Stack](#tech-stack)
+3. [Database Schema](#database-schema)
+4. [Valuation Engine — Math & Formulas](#valuation-engine--math--formulas)
+   - [4.1 Price Per Square Foot (PSF)](#41-price-per-square-foot-psf)
+   - [4.2 Comparable Selection](#42-comparable-selection)
+   - [4.3 Outlier Removal](#43-outlier-removal)
+   - [4.4 Descriptive Statistics](#44-descriptive-statistics)
+   - [4.5 Area Valuation](#45-area-valuation)
+   - [4.6 Project Valuation](#46-project-valuation)
+   - [4.7 Specialist Assessment](#47-specialist-assessment)
+   - [4.8 Verdict](#48-verdict)
+   - [4.9 Confidence Score](#49-confidence-score)
+5. [End-to-End Valuation Flow](#end-to-end-valuation-flow)
+6. [Roles & Permissions (RBAC)](#roles--permissions-rbac)
+7. [Valuation Links](#valuation-links)
+8. [PDF Report Generation](#pdf-report-generation)
+9. [Full API Reference](#full-api-reference)
+10. [Admin Dashboard](#admin-dashboard)
+11. [Environment Variables](#environment-variables)
+12. [Installation & Running](#installation--running)
+13. [Project Structure](#project-structure)
 
 ---
 
-## نظرة عامة
+## Overview
 
-تعمل المنصة على نموذج ثلاثي المراحل:
+The platform operates on a three-actor model:
 
 ```
-العميل ← رابط تقييم عام → يملأ نموذج → يحصل على نتيجة فورية + تقرير PDF
-المدير ← لوحة إدارة → يتابع العملاء المحتملين (Leads) → يصدر تقارير
+Client  ←  shareable valuation link  →  fills form  →  instant result + PDF report
+Admin   ←  dashboard                 →  manages leads, projects, reports
+Agent   ←  dashboard                 →  creates links, handles assigned leads
 ```
 
-**المزايا الجوهرية:**
-- تقييم مزدوج: منطقة جغرافية + مشروع محدد
-- تقييم يدوي من المختص كطبقة ثالثة
-- محرك مقارنات ذكي مع إزالة الشواذ
-- درجة ثقة مبنية على حجم البيانات وتباينها وحداثتها
-- روابط قابلة للمشاركة مع إحصاءات الاستخدام
-- تقرير PDF احترافي يُولَّد تلقائياً
-- سجل تدقيق كامل لكل عملية
-- RBAC بأربعة مستويات صلاحية
+**Core capabilities:**
+- **Dual automated valuation** — area-wide market + project-specific comparison
+- **Manual specialist layer** — human expert price override as a third card
+- **Smart comparable engine** — two-pass filtering with configurable outlier removal
+- **Confidence scoring** — driven by data volume, variance, and recency
+- **Shareable links** — per-project, with usage limits, expiry, and agent attribution
+- **Automated PDF reports** — generated via Puppeteer, stored as binary in DB
+- **Immutable audit log** — every mutation is recorded
+- **RBAC** — four roles with fine-grained permission control
 
 ---
 
-## المكدس التقني
+## Tech Stack
 
-| الطبقة | التقنية | الإصدار |
-|--------|---------|---------|
+| Layer | Technology | Version |
+|-------|-----------|---------|
 | **Framework** | Next.js (App Router) | 14.2 |
 | **UI** | React + TypeScript | 18 / 5 |
 | **Styling** | Tailwind CSS + Radix UI | 3.4 |
 | **ORM** | Prisma | 6.19 |
 | **Database** | MySQL | 8+ |
-| **Auth** | NextAuth.js | 4.24 |
+| **Authentication** | NextAuth.js | 4.24 |
 | **Job Queue** | BullMQ + Redis | 5.70 |
-| **PDF** | Puppeteer + @sparticuz/chromium | 24 |
+| **PDF Generation** | Puppeteer + @sparticuz/chromium | 24 |
 | **Email** | Resend / Nodemailer (SMTP) | — |
 | **Charts** | Recharts | 3.7 |
 | **Validation** | Zod | 4.3 |
@@ -64,228 +74,242 @@
 
 ---
 
-## هيكل قاعدة البيانات
+## Database Schema
 
-### خريطة العلاقات
+### Entity Relationship Map
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        User & Auth                           │
-│  User ──< UserRole >── Role                                  │
-│  User ──< PasswordResetToken                                 │
-└──────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────┐
-│                       Core Domain                            │
-│  Project ──< Entry          (قوائم بيع + معاملات DLD)       │
-│  Project ──< ValuationLink  (روابط العملاء)                  │
-│  Project ──< Lead           (طلبات التقييم)                  │
-└──────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      Valuation Output                        │
-│  Lead ──── ValuationResult  (ناتج المحرك)                    │
-│  Lead ──── Report           (PDF مُولَّد)                    │
-│  Lead ──── SpecialistAssessment (تقييم المختص)               │
-└──────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Infrastructure                            │
-│  AuditLog   (سجل التدقيق)                                    │
-│  Setting    (الإعدادات: branding + valuation rules)          │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                       User & Auth                           │
+│  User ──< UserRole >── Role                                 │
+│  User ──< PasswordResetToken                                │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Core Domain                            │
+│  Project ──< Entry          (listings + DLD transactions)   │
+│  Project ──< ValuationLink  (public client links)           │
+│  Project ──< Lead           (valuation requests)            │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Valuation Output                          │
+│  Lead ──── ValuationResult     (engine output snapshot)     │
+│  Lead ──── Report              (generated PDF)              │
+│  Lead ──── SpecialistAssessment (expert override)           │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Infrastructure                           │
+│  AuditLog  (immutable event log)                            │
+│  Setting   (branding + valuation rules config)              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### تفصيل الجداول
+### Table Definitions
 
-#### `Project` — المشاريع العقارية
+#### `Project` — Real estate projects
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `id` | String PK | معرّف فريد |
-| `name` | String | اسم المشروع |
-| `location` | String? | الموقع الجغرافي |
-| `category` | `RESIDENTIAL \| COMMERCIAL` | تصنيف المشروع |
-| `defaultType` | PropertyType? | نوع العقار الافتراضي |
-| `areaTolerancePct` | Float | نسبة تحمّل فارق المساحة (%) |
-| `currency` | String (default: AED) | العملة |
-| `isActive` | Boolean | حالة المشروع |
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | String PK | Unique identifier |
+| `name` | String | Project name |
+| `location` | String? | Geographic location |
+| `category` | `RESIDENTIAL \| COMMERCIAL` | Project classification |
+| `defaultType` | PropertyType? | Default property type for the form |
+| `areaTolerancePct` | Float | Area tolerance window (%) |
+| `currency` | String (default: AED) | Display currency |
+| `isActive` | Boolean | Soft-delete flag |
 
-#### `Entry` — بيانات المقارنات
+#### `Entry` — Comparable data points
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `sourceType` | `LISTING \| TRANSACTION` | مصدر البيانات |
-| `propertyType` | PropertyType | نوع العقار |
-| `bedrooms` | Int? | عدد غرف النوم |
-| `bathrooms` | Int? | عدد الحمامات |
-| `areaSqft` | Float? | المساحة (قدم²) — للقوائم |
-| `askPrice` | Float? | سعر الطلب |
-| `lowestPrice` | Float? | أدنى سعر |
-| `askPsf` | Float? | **سعر الطلب ÷ المساحة** (مُحسوب) |
-| `lowPsf` | Float? | **أدنى سعر ÷ المساحة** (مُحسوب) |
-| `transactionAreaSqft` | Float? | المساحة الفعلية (معاملات DLD) |
-| `transactionPrice` | Float? | سعر المعاملة الفعلي |
-| `transactionPsf` | Float? | **سعر المعاملة ÷ المساحة** (مُحسوب) |
-| `transactionDate` | DateTime? | تاريخ المعاملة |
-| `locationLabel` | String? | وصف الموقع |
-| `portal` | String? | المصدر (PropertyFinder…) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `sourceType` | `LISTING \| TRANSACTION` | Data source |
+| `propertyType` | PropertyType | Type of unit |
+| `bedrooms` | Int? | Bedroom count |
+| `bathrooms` | Int? | Bathroom count |
+| `areaSqft` | Float? | Area in sq ft — listings |
+| `askPrice` | Float? | Asking price |
+| `lowestPrice` | Float? | Lowest listed price |
+| `askPsf` | Float? | **askPrice ÷ areaSqft** (computed) |
+| `lowPsf` | Float? | **lowestPrice ÷ areaSqft** (computed) |
+| `transactionAreaSqft` | Float? | Actual area — DLD transactions |
+| `transactionPrice` | Float? | Actual transaction price |
+| `transactionPsf` | Float? | **transactionPrice ÷ transactionAreaSqft** (computed) |
+| `transactionDate` | DateTime? | Date of DLD transaction |
+| `locationLabel` | String? | Location description |
+| `portal` | String? | Source portal (e.g. PropertyFinder) |
 
-#### `Lead` — طلبات التقييم من العملاء
+#### `Lead` — Client valuation requests
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `id` | String PK | معرّف الطلب |
-| `projectId` | String FK | المشروع المرتبط |
-| `linkId` | String FK | الرابط المُستخدَم |
-| `fullName` | String | اسم العميل |
-| `phone` | String | رقم الهاتف |
-| `email` | String? | البريد الإلكتروني |
-| `category` | PropertyCategory | تصنيف العقار |
-| `propertyType` | PropertyType | نوع العقار |
-| `bedrooms` | Int? | الغرف |
-| `areaSqft` | Float | المساحة المطلوب تقييمها |
-| `clientPrice` | Float? | السعر الذي يطلبه العميل |
-| `status` | LeadStatus | حالة المتابعة |
-| `assignedAgentId` | String? | الموظف المكلَّف |
-| `ipAddress` | String? | عنوان IP للعميل |
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | String PK | Request identifier |
+| `projectId` | String FK | Associated project |
+| `linkId` | String FK | Link used to submit |
+| `fullName` | String | Client name |
+| `phone` | String | Phone number |
+| `email` | String? | Email address |
+| `category` | PropertyCategory | Residential / Commercial |
+| `propertyType` | PropertyType | Unit type |
+| `bedrooms` | Int? | Bedroom count |
+| `areaSqft` | Float | Area to value |
+| `clientPrice` | Float? | Client's asking price |
+| `status` | LeadStatus | Pipeline stage |
+| `assignedAgentId` | String? | Assigned agent |
+| `ipAddress` | String? | Client IP for rate-limiting |
 
-#### `ValuationResult` — ناتج محرك التقييم
+#### `ValuationResult` — Valuation engine output
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `leadId` | String FK | الطلب المرتبط |
-| `rulesVersion` | String | إصدار قواعد التقييم |
-| `areaTolerancePct` | Float | نسبة تحمّل المساحة المُستخدَمة |
-| `outlierMethod` | String | طريقة إزالة الشواذ |
-| `minComps` | Int | الحد الأدنى من المقارنات |
-| `benchmark` | String | المعيار المُستخدَم |
-| `clientPsf` | Float? | **سعر العميل ÷ مساحته** |
-| `listingCount` | Int | عدد قوائم البيع المُستخدَمة |
-| `listingMeanPsf` | Float? | متوسط PSF للقوائم |
-| `listingMedianPsf` | Float? | وسيط PSF للقوائم |
-| `listingMinPsf` | Float? | أدنى PSF للقوائم |
-| `listingMaxPsf` | Float? | أعلى PSF للقوائم |
-| `transactionCount` | Int | عدد معاملات DLD |
-| `transactionMeanPsf` | Float? | متوسط PSF للمعاملات |
-| `transactionMedianPsf` | Float? | وسيط PSF للمعاملات |
-| `transactionMinPsf` | Float? | أدنى PSF للمعاملات |
-| `transactionMaxPsf` | Float? | أعلى PSF للمعاملات |
-| `recommendedLow` | Float? | السعر المُوصى به (أدنى) |
-| `recommendedMid` | Float? | السعر المُوصى به (وسط) |
-| `recommendedHigh` | Float? | السعر المُوصى به (أعلى) |
-| `verdict` | VerdictLabel | الحكم على السعر |
-| `ratioToMarket` | Float? | نسبة سعر العميل إلى السوق |
-| `confidence` | Int? | درجة الثقة (0–100) |
-| `explanations` | JSON | تفسيرات نصية للنتيجة |
-| `compsUsed` | JSON | المقارنات المُستخدَمة (area) |
-| `projectValuationData` | JSON? | نتيجة التقييم على مستوى المشروع |
-| `projectCompsUsed` | JSON? | مقارنات المشروع المُستخدَمة |
+| Field | Type | Description |
+|-------|------|-------------|
+| `leadId` | String FK | Parent lead |
+| `rulesVersion` | String | Config version at time of valuation |
+| `areaTolerancePct` | Float | Tolerance used |
+| `outlierMethod` | String | Outlier removal method used |
+| `minComps` | Int | Minimum comparables threshold |
+| `benchmark` | String | Benchmark stat used (median/mean) |
+| `clientPsf` | Float? | **clientPrice ÷ clientAreaSqft** |
+| `listingCount` | Int | Number of listing comps used |
+| `listingMeanPsf` | Float? | Mean PSF of listing comps |
+| `listingMedianPsf` | Float? | Median PSF of listing comps |
+| `listingMinPsf` | Float? | Min PSF of listing comps |
+| `listingMaxPsf` | Float? | Max PSF of listing comps |
+| `transactionCount` | Int | Number of DLD transaction comps |
+| `transactionMeanPsf` | Float? | Mean PSF of transactions |
+| `transactionMedianPsf` | Float? | Median PSF of transactions |
+| `transactionMinPsf` | Float? | Min PSF of transactions |
+| `transactionMaxPsf` | Float? | Max PSF of transactions |
+| `recommendedLow` | Float? | Recommended price — low end |
+| `recommendedMid` | Float? | Recommended price — midpoint |
+| `recommendedHigh` | Float? | Recommended price — high end |
+| `verdict` | VerdictLabel | Price verdict |
+| `ratioToMarket` | Float? | clientPsf / benchmarkPsf |
+| `confidence` | Int? | Confidence score (0–100) |
+| `explanations` | JSON | Human-readable verdict explanations |
+| `compsUsed` | JSON | Area-level comparables snapshot |
+| `projectValuationData` | JSON? | Project-level valuation result |
+| `projectCompsUsed` | JSON? | Project-level comparables snapshot |
 
-#### `SpecialistAssessment` — تقييم المختص
+#### `SpecialistAssessment` — Expert override
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `leadId` | String FK | الطلب المرتبط |
-| `specialistId` | String FK | المختص المُقيِّم |
-| `estimatedPrice` | Float | السعر المُقدَّر من المختص |
-| `estimatedPsf` | Float | PSF المُقدَّر |
-| `notes` | String? | ملاحظات المختص |
+| Field | Type | Description |
+|-------|------|-------------|
+| `leadId` | String FK | Parent lead |
+| `specialistId` | String FK | Specialist user |
+| `estimatedPrice` | Float | Expert price estimate |
+| `estimatedPsf` | Float | Expert PSF estimate |
+| `notes` | String? | Specialist notes |
 
-#### `ValuationLink` — روابط التقييم العامة
+#### `ValuationLink` — Public shareable links
 
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `id` | String PK | يُشكّل الـ token في الرابط |
-| `projectId` | String FK | المشروع |
-| `agentId` | String? FK | الموظف المُنشئ |
-| `label` | String? | اسم وصفي للرابط |
-| `status` | `ACTIVE \| DISABLED \| EXPIRED` | الحالة |
-| `expiresAt` | DateTime? | تاريخ الانتهاء |
-| `maxUses` | Int? | الحد الأقصى للاستخدام |
-| `usedCount` | Int | عدد الاستخدامات الفعلية |
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | String PK | Forms the URL token: `/v/{id}` |
+| `projectId` | String FK | Associated project |
+| `agentId` | String? FK | Creating agent (for lead attribution) |
+| `label` | String? | Descriptive name |
+| `status` | `ACTIVE \| DISABLED \| EXPIRED` | Link state |
+| `expiresAt` | DateTime? | Optional expiry |
+| `maxUses` | Int? | Optional usage cap |
+| `usedCount` | Int | Actual submission count |
+
+#### `Report` — Generated PDF artifacts
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `leadId` | String FK | Parent lead |
+| `status` | `QUEUED \| PROCESSING \| READY \| FAILED` | Generation status |
+| `pdfData` | Bytes? | Raw PDF binary (LongBlob in MySQL) |
+| `fileName` | String | e.g. `valuation-report-{leadId}.pdf` |
+| `checksumSha256` | String? | Integrity checksum |
+| `fileSize` | Int? | File size in bytes |
+| `errorMessage` | String? | Populated on failure |
 
 ---
 
-## محرك التقييم — المعادلات الرياضية
+## Valuation Engine — Math & Formulas
 
-الملفات ذات الصلة: `src/valuation/`
+Source files: `src/valuation/`
 
-### حساب السعر لكل قدم مربع (PSF)
+---
 
-**ملف:** `src/valuation/engine.ts`
+### 4.1 Price Per Square Foot (PSF)
+
+**File:** `src/valuation/engine.ts`
 
 ```
-للقوائم (Listings):
-  askPsf  = askPrice    / areaSqft
-  lowPsf  = lowestPrice / areaSqft
+Listing entries:
+  askPsf = askPrice    / areaSqft
+  lowPsf = lowestPrice / areaSqft
 
-للمعاملات (DLD Transactions):
+DLD Transaction entries:
   transactionPsf = transactionPrice / transactionAreaSqft
 
-لسعر العميل:
+Client input:
   clientPsf = clientPrice / clientAreaSqft
 ```
 
 ---
 
-### اختيار المقارنات (Comparable Selection)
+### 4.2 Comparable Selection
 
-**ملف:** `src/valuation/matching.ts`
+**File:** `src/valuation/matching.ts`
 
-#### خوارزمية التصفية (Two-Pass)
+#### Two-Pass Filtering Algorithm
 
 ```
-المرحلة الأولى — صارمة:
-  [1] نوع العقار مطابق  (مع استثناء DLD أدناه)
-  [2] عدد الغرف مطابق تماماً
-  [3] المساحة ضمن نطاق التحمّل
+Pass 1 — Strict:
+  [1] Property type match  (with DLD alias exception below)
+  [2] Exact bedroom match
+  [3] Area within tolerance window
 
-المرحلة الثانية — مرنة (تُفعَّل إذا عدد النتائج < minComps):
-  [1] نوع العقار مطابق
-  [2] شرط الغرف مُتجاهَل
-  [3] المساحة ضمن نطاق التحمّل
+Pass 2 — Relaxed  (activated when Pass 1 yields fewer than minComps):
+  [1] Property type match
+  [2] Bedroom filter ignored
+  [3] Area within tolerance window
 ```
 
-#### نطاق تحمّل المساحة (Area Tolerance)
+#### Area Tolerance Window
 
 ```
 lowerBound = clientAreaSqft * (1 - areaTolerancePct / 100)
 upperBound = clientAreaSqft * (1 + areaTolerancePct / 100)
 
-المقارنة مقبولة إذا:
+A comparable is accepted when:
   lowerBound <= entryAreaSqft <= upperBound
 ```
 
-**مثال:** مساحة العميل = 1000 قدم²، tolerance = 20%
+**Example:** client area = 1,000 sqft, tolerance = 20%
 ```
-lowerBound = 1000 * 0.80 = 800
-upperBound = 1000 * 1.20 = 1200
-→ تُقبل كل إدخالات بين 800 و 1200 قدم²
+lowerBound = 1,000 * 0.80 = 800 sqft
+upperBound = 1,000 * 1.20 = 1,200 sqft
+→ All entries between 800 and 1,200 sqft are included
 ```
 
-> **استثناء DLD:** المشاريع قيد الإنشاء تُسجَّل معاملاتها كـ `LAND` في DLD. لذا يُعامَل `LAND` معادلاً لـ `VILLA / TOWNHOUSE / DUPLEX / PENTHOUSE` عند البحث في إدخالات نفس المشروع. كذلك تُعفى مقارنات المشروع نفسه من شرط نطاق المساحة.
+> **DLD Exception:** Off-plan units are often registered as `LAND` in DLD records. Therefore `LAND` is treated as equivalent to `VILLA / TOWNHOUSE / DUPLEX / PENTHOUSE` when matching within the same project. Same-project entries are also exempt from the area tolerance check.
 
 ---
 
-### إزالة الشواذ (Outlier Removal)
+### 4.3 Outlier Removal
 
-**ملف:** `src/valuation/outliers.ts`
+**File:** `src/valuation/outliers.ts`
 
-#### الطريقة 1: Trim 10% (الافتراضية)
+#### Method 1: Trim 10% (default)
 
 ```
-1. رتّب قيم PSF تصاعدياً: sorted[0..n-1]
+1. Sort PSF values ascending: sorted[0..n-1]
 2. cutCount = floor(n * 0.10)
-3. النتيجة = sorted[ cutCount .. n - cutCount - 1 ]
+3. Cleaned set = sorted[ cutCount .. n - cutCount - 1 ]
 ```
 
-**مثال:** 20 قيمة → cutCount=2 → احذف أعلى 2 وأدنى 2 → تبقى 16
+**Example:** 20 values → cutCount = 2 → remove lowest 2 and highest 2 → 16 values remain
 
-#### الطريقة 2: IQR (Interquartile Range)
+#### Method 2: IQR (Interquartile Range)
 
 ```
 Q1 = percentile(sorted, 25)
@@ -295,10 +319,10 @@ IQR = Q3 - Q1
 lowerFence = Q1 - 1.5 * IQR
 upperFence = Q3 + 1.5 * IQR
 
-القيم المحتفَظ بها: lowerFence <= PSF <= upperFence
+Retained values: lowerFence <= PSF <= upperFence
 ```
 
-#### حساب الـ Percentile (Linear Interpolation)
+#### Percentile Calculation (Linear Interpolation)
 
 ```
 index  = (p / 100) * (n - 1)
@@ -311,141 +335,144 @@ percentile(p) = lower * (1 - weight) + upper * weight
 
 ---
 
-### الإحصاء الوصفي
+### 4.4 Descriptive Statistics
 
-**ملف:** `src/valuation/stats.ts`
+**File:** `src/valuation/stats.ts`
 
 ```
-المتوسط:
+Mean:
   mean = sum(psfValues) / n
 
-الوسيط:
-  إذا n فردي:  median = sorted[ (n-1)/2 ]
-  إذا n زوجي: median = ( sorted[n/2 - 1] + sorted[n/2] ) / 2
+Median:
+  if n is odd:  median = sorted[ (n-1)/2 ]
+  if n is even: median = ( sorted[n/2 - 1] + sorted[n/2] ) / 2
 
-الأدنى:  min = sorted[0]
-الأعلى:  max = sorted[n-1]
+Min:  sorted[0]
+Max:  sorted[n-1]
 ```
 
-#### اختيار المعيار (Benchmark PSF)
+#### Benchmark PSF Selection
 
 ```
-إذا benchmark = "transactionMedianPsf":
-  الأولوية 1 → transactionMedianPsf  (إذا count > 0)
-  الأولوية 2 → listingMedianPsf      (fallback)
-  الأولوية 3 → null                  → INSUFFICIENT_DATA
+When benchmark = "transactionMedianPsf":
+  Priority 1 → transactionMedianPsf  (if transactionCount > 0)
+  Priority 2 → listingMedianPsf      (fallback)
+  Priority 3 → null                  → INSUFFICIENT_DATA
 
-إذا benchmark = "listingMedianPsf":
-  الأولوية 1 → listingMedianPsf      (إذا count > 0)
-  الأولوية 2 → transactionMedianPsf  (fallback)
-  الأولوية 3 → null                  → INSUFFICIENT_DATA
+When benchmark = "listingMedianPsf":
+  Priority 1 → listingMedianPsf      (if listingCount > 0)
+  Priority 2 → transactionMedianPsf  (fallback)
+  Priority 3 → null                  → INSUFFICIENT_DATA
 ```
 
 ---
 
-### التقييم المبني على المنطقة (Area Valuation)
+### 4.5 Area Valuation
 
-**ملف:** `src/valuation/engine.ts` — الخوارزمية الرئيسية
+**File:** `src/valuation/engine.ts` — primary valuation path
 
 ```
-المدخلات:
+Inputs:
   clientAreaSqft, clientBedrooms, clientPropertyType, clientPrice
 
-الخوارزمية:
-  [1] استخرج قوائم بيع المشروع (LISTING entries)
-  [2] استخرج معاملات DLD للموقع كله (TRANSACTION entries)
-      مُصفَّاة بنطاق المساحة ونوع العقار والغرف (Two-Pass)
-  [3] أزل الشواذ بالطريقة المُختارة
-  [4] احسب الإحصاءات لكل مجموعة:
-        listingStats     = { count, mean, median, min, max }
-        transactionStats = { count, mean, median, min, max }
-  [5] تحقق من الحد الأدنى:
-        إذا (listingCount + transactionCount) < minComps:
-          → verdict = INSUFFICIENT_DATA
-  [6] اختر benchmarkPsf (median أو mean حسب الإعداد)
-  [7] احسب نطاق السعر الموصى به:
-        recommendedLow  = min(كل PSF المُنقّاة) * clientAreaSqft
-        recommendedMid  = benchmarkPsf           * clientAreaSqft
-        recommendedHigh = max(كل PSF المُنقّاة) * clientAreaSqft
-  [8] احسب clientPsf = clientPrice / clientAreaSqft
-  [9] طبّق معادلة الـ Verdict
-  [10] احسب درجة الثقة (Confidence Score)
+Algorithm:
+  [1]  Load project listing entries  (sourceType = LISTING)
+  [2]  Load DLD transaction entries  (sourceType = TRANSACTION)
+       → filtered by area tolerance + property type + bedrooms (Two-Pass)
+  [3]  Remove outliers using configured method
+  [4]  Compute aggregates per group:
+         listingStats     = { count, mean, median, min, max }
+         transactionStats = { count, mean, median, min, max }
+  [5]  Check minimum threshold:
+         if (listingCount + transactionCount) < minComps:
+           → verdict = INSUFFICIENT_DATA
+  [6]  Select benchmarkPsf (median or mean, per config)
+  [7]  Compute recommended price range:
+         recommendedLow  = min(all cleaned PSF values) * clientAreaSqft
+         recommendedMid  = benchmarkPsf               * clientAreaSqft
+         recommendedHigh = max(all cleaned PSF values) * clientAreaSqft
+  [8]  Compute clientPsf = clientPrice / clientAreaSqft
+  [9]  Apply Verdict formula
+  [10] Compute Confidence Score
 ```
 
 ---
 
-### التقييم المبني على المشروع (Project Valuation)
+### 4.6 Project Valuation
 
-**ملف:** `app/api/public/v/[token]/submit/route.ts`
+**File:** `app/api/public/v/[token]/submit/route.ts`
 
-نفس خوارزمية Area Valuation لكن مع تقييد المصادر:
+Identical algorithm to Area Valuation, but data sources are restricted:
 
 ```
-مقارنات المشروع = قوائم المشروع + معاملات المشروع فقط
-                  (بدلاً من كل معاملات الموقع الجغرافي)
+Project comparables = project listing entries
+                    + project-only transaction entries
+                      (instead of all transactions for the location)
 
-النتيجة مُخزَّنة في:
-  ValuationResult.projectValuationData  (JSON — كامل ناتج المحرك)
-  ValuationResult.projectCompsUsed      (JSON — المقارنات المُستخدَمة)
+Result stored in:
+  ValuationResult.projectValuationData  (JSON — full engine output)
+  ValuationResult.projectCompsUsed      (JSON — comparables snapshot)
 ```
 
-يتيح هذا مقارنة التقييم على مستويين:
-- **Area Valuation** → السوق العام للمنطقة الجغرافية
-- **Project Valuation** → أداء المشروع تحديداً
+This enables a side-by-side comparison across two scopes:
+- **Area Valuation** → the broader geographic market
+- **Project Valuation** → the specific project's own price history
 
 ---
 
-### تقييم المختص (Specialist Assessment)
+### 4.7 Specialist Assessment
 
-**ملف:** `app/api/leads/[leadId]/specialist-assessment/route.ts`
+**File:** `app/api/leads/[leadId]/specialist-assessment/route.ts`
+
+A manual third valuation layer entered by a human expert:
 
 ```
-المدخلات: estimatedPrice (من الموظف المختص)
+Input: estimatedPrice  (entered by the specialist in the admin dashboard)
 
 estimatedPsf = estimatedPrice / lead.areaSqft
 
-يُعرض جنباً إلى جنب مع التقييمين الآليين:
-  بطاقة 1: Area Valuation    (السوق العام)
-  بطاقة 2: Project Valuation (مستوى المشروع)
-  بطاقة 3: Specialist        (رأي الإنسان المختص)
+Displayed alongside the two automated valuations:
+  Card 1 — Area Valuation      (broad market)
+  Card 2 — Project Valuation   (project-level)
+  Card 3 — Specialist          (human expert opinion)
 ```
 
 ---
 
-### الحكم على السعر (Verdict)
+### 4.8 Verdict
 
-**ملف:** `src/valuation/verdict.ts`
+**File:** `src/valuation/verdict.ts`
 
 ```
 ratio = clientPsf / benchmarkPsf
 
-إذا ratio < threshold_below_market  → BELOW_MARKET    (أقل من السوق)
-إذا ratio <= threshold_aligned_max   → ALIGNED         (متوافق مع السوق)
-إذا ratio <= threshold_slightly_max  → SLIGHTLY_ABOVE  (أعلى قليلاً)
-غير ذلك                              → ABOVE_MARKET    (أعلى من السوق)
+if ratio < threshold_below_market   → BELOW_MARKET    (below market value)
+if ratio <= threshold_aligned_max   → ALIGNED         (in line with market)
+if ratio <= threshold_slightly_max  → SLIGHTLY_ABOVE  (slightly above market)
+otherwise                           → ABOVE_MARKET    (significantly above market)
 ```
 
-**العتبات الافتراضية** (قابلة للتعديل من `/admin/settings/valuation-rules`):
+**Default thresholds** (configurable via `/admin/settings/valuation-rules`):
 
-| العتبة | القيمة الافتراضية | المعنى |
-|--------|------------------|--------|
-| `threshold_below_market` | 0.95 | أقل من 95% من السوق |
-| `threshold_aligned_max` | 1.05 | بين 95%–105% |
-| `threshold_slightly_max` | 1.15 | بين 105%–115% |
-| فوق | > 1.15 | أكثر من 15% فوق السوق |
+| Threshold | Default | Meaning |
+|-----------|---------|---------|
+| `threshold_below_market` | 0.95 | Below 95% of market |
+| `threshold_aligned_max` | 1.05 | Within ±5% of market |
+| `threshold_slightly_max` | 1.15 | 5%–15% above market |
+| Above | > 1.15 | More than 15% above market |
 
 ---
 
-### درجة الثقة (Confidence Score)
+### 4.9 Confidence Score
 
-**ملف:** `src/valuation/scoring.ts`
+**File:** `src/valuation/scoring.ts`
 
-درجة من **0 إلى 100** مجموع أربعة عوامل:
+A score from **0 to 100** composed of four independent factors:
 
-#### العامل 1: حجم المقارنات (0–40 نقطة)
+#### Factor 1: Comparable Volume (0–40 pts)
 
-| عدد المقارنات | النقاط |
-|---------------|--------|
+| Comparable count | Points |
+|-----------------|--------|
 | ≥ 15 | 40 |
 | ≥ 10 | 30 |
 | ≥ 7 | 25 |
@@ -453,16 +480,16 @@ ratio = clientPsf / benchmarkPsf
 | ≥ 3 | 10 |
 | < 3 | 0 |
 
-#### العامل 2: وجود معاملات DLD (0–10 نقاط)
+#### Factor 2: DLD Transaction Presence (0–10 pts)
 
-| عدد معاملات DLD | النقاط |
-|-----------------|--------|
+| DLD transaction count | Points |
+|-----------------------|--------|
 | ≥ 5 | 10 |
 | ≥ 3 | 7 |
 | ≥ 1 | 3 |
 | 0 | 0 |
 
-#### العامل 3: تباين البيانات — Coefficient of Variation (0–30 نقطة)
+#### Factor 3: Data Variance — Coefficient of Variation (0–30 pts)
 
 ```
 mean     = average(psfValues)
@@ -471,395 +498,399 @@ stdDev   = sqrt(variance)
 CV       = stdDev / mean
 ```
 
-| CV (معامل التباين) | النقاط |
-|--------------------|--------|
+| CV (coefficient of variation) | Points |
+|-------------------------------|--------|
 | CV < 0.05 | 30 |
 | CV < 0.10 | 25 |
 | CV < 0.15 | 18 |
 | CV < 0.25 | 10 |
 | CV ≥ 0.25 | 3 |
 
-#### العامل 4: حداثة البيانات (0–20 نقطة)
+#### Factor 4: Data Recency (0–20 pts)
 
-| آخر معاملة DLD | النقاط |
-|----------------|--------|
-| ≤ 6 أشهر | 20 |
-| > 6 أشهر أو لا توجد | 5 |
+| Most recent DLD transaction | Points |
+|-----------------------------|--------|
+| ≤ 6 months ago | 20 |
+| > 6 months ago or none | 5 |
 
-#### الدرجة الإجمالية
+#### Total Score
 
 ```
-confidence = نقاط_الحجم + نقاط_المعاملات + نقاط_التباين + نقاط_الحداثة
-             (الحد الأقصى: 100)
+confidence = volumePoints + transactionPoints + variancePoints + recencyPoints
+             (maximum: 100)
 ```
 
 ---
 
-## تدفق التقييم الكامل
+## End-to-End Valuation Flow
 
 ```
-العميل
+Client
   │
-  ├─ يفتح رابط التقييم: https://domain.com/v/{linkId}
+  ├─ opens valuation link: https://domain.com/v/{linkId}
   │
   ▼
 GET /api/public/v/{token}/meta
-  │  التحقق: status=ACTIVE، لم ينته، usedCount < maxUses
-  │  الإرجاع: اسم المشروع، الموقع، العملة، نوع العقار الافتراضي
+  │  Validates: status=ACTIVE, not expired, usedCount < maxUses
+  │  Returns: project name, location, currency, default property type
   │
   ▼
-نموذج 3 خطوات:
-  الخطوة 1 — بيانات الاتصال: الاسم + الهاتف + الإيميل
-  الخطوة 2 — بيانات العقار:   النوع + الغرف + المساحة + السعر
-  الخطوة 3 — النتائج الفورية
+3-step wizard:
+  Step 1 — Contact:  name + phone + email
+  Step 2 — Property: type + bedrooms + area (sqft) + asking price
+  Step 3 — Results:  instant verdict + price range + confidence
   │
   ▼
 POST /api/public/v/{token}/submit
-  │  [1] Rate Limit: 5 طلبات / دقيقة / IP
-  │  [2] التحقق من صلاحية الرابط
-  │  [3] التحقق من البيانات (Zod Schema)
-  │  [4] Area Valuation  → benchmarkPsf + verdict + confidence + range
-  │  [5] Project Valuation → projectValuationData
-  │  [6] إنشاء (atomic):
-  │        Lead + ValuationResult + Report(QUEUED)
+  │  [1] Rate limit: 5 requests / minute / IP
+  │  [2] Validate link (status, expiry, usage)
+  │  [3] Validate input (Zod schema)
+  │  [4] Run Area Valuation    → benchmarkPsf + verdict + confidence + range
+  │  [5] Run Project Valuation → projectValuationData
+  │  [6] Atomic DB write:
+  │        Lead + ValuationResult + Report{status: QUEUED}
   │  [7] usedCount += 1
-  │  [8] BullMQ ← مهمة توليد PDF
-  │  [9] إرجاع النتيجة للعميل فوراً
+  │  [8] Enqueue PDF job → BullMQ (Redis)
+  │  [9] Return result to client immediately
   │
   ▼
-BullMQ Worker (خلفي)
-  │  renderHtml.ts → بناء HTML من البيانات + Branding
-  │  generatePdf.ts → Puppeteer → PDF buffer
-  │  Report.pdfData = buffer | Report.status = READY
+BullMQ Worker (background)
+  │  renderHtml.ts  → build HTML from data + branding settings
+  │  generatePdf.ts → Puppeteer → PDF buffer (A4)
+  │  Report.pdfData = buffer  |  Report.status = READY
   │
   ▼
 GET /api/public/v/report/{leadId}
-  تنزيل PDF (بدون تسجيل دخول)
+  Download PDF (no authentication required)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-لوحة الإدارة (بالتوازي):
-  Lead يظهر في /admin/leads بحالة NEW
-  الموظف يرى: Area + Project + يُضيف Specialist Assessment
-  سير حالة العميل: NEW → CONTACTED → QUALIFIED → APPOINTMENT_SET → WON/LOST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Admin dashboard (running in parallel):
+  Lead appears in /admin/leads with status NEW
+  Agent reviews: Area card + Project card
+  Agent adds: Specialist Assessment (optional)
+  Lead pipeline: NEW → CONTACTED → QUALIFIED → APPOINTMENT_SET → WON / LOST
 ```
 
 ---
 
-## الأدوار والصلاحيات RBAC
+## Roles & Permissions (RBAC)
 
-**ملف:** `src/auth/rbac.ts`
+**File:** `src/auth/rbac.ts`
 
-### الأدوار
+### Roles
 
-| الدور | الكود | الوصف |
-|-------|-------|-------|
-| المدير العام | `ADMIN` | صلاحيات كاملة بلا قيود |
-| المدير | `MANAGER` | إدارة المشاريع والعملاء والتقارير والتحليلات |
-| الموظف | `AGENT` | إنشاء روابط وإدارة العملاء المكلَّف بهم |
-| المشاهد | `VIEWER` | قراءة فقط |
+| Role | Code | Description |
+|------|------|-------------|
+| Administrator | `ADMIN` | Unrestricted access — team, settings, audit |
+| Manager | `MANAGER` | Manage projects, leads, reports, analytics |
+| Agent | `AGENT` | Create links, manage assigned leads |
+| Viewer | `VIEWER` | Read-only access |
 
-### مصفوفة الصلاحيات
+### Permission Matrix
 
-| الصلاحية | ADMIN | MANAGER | AGENT | VIEWER |
-|----------|:-----:|:-------:|:-----:|:------:|
-| **المشاريع** | | | | |
-| عرض | ✅ | ✅ | ✅ | ✅ |
-| إنشاء / تعديل | ✅ | ✅ | ✅ | ❌ |
-| حذف | ✅ | ❌ | ❌ | ❌ |
-| **المقارنات (Entries)** | | | | |
-| عرض | ✅ | ✅ | ✅ | ✅ |
-| إضافة / تعديل | ✅ | ✅ | ✅ | ❌ |
-| حذف | ✅ | ✅ | ❌ | ❌ |
-| **روابط التقييم** | | | | |
-| عرض | ✅ | ✅ | ✅ | ❌ |
-| إنشاء / تعديل | ✅ | ✅ | ✅ | ❌ |
-| حذف / تعطيل | ✅ | ✅ | ❌ | ❌ |
-| **العملاء (Leads)** | | | | |
-| عرض الجميع | ✅ | ✅ | ❌ | ❌ |
-| عرض المكلَّف بهم | ✅ | ✅ | ✅ | ❌ |
-| تحديث الحالة | ✅ | ✅ | ✅ | ❌ |
-| تكليف موظف | ✅ | ✅ | ❌ | ❌ |
-| **التقارير** | | | | |
-| عرض الجميع | ✅ | ✅ | ❌ | ❌ |
-| عرض المكلَّف بهم | ✅ | ✅ | ✅ | ❌ |
-| توليد PDF | ✅ | ✅ | ✅ | ❌ |
-| تقييم المختص | ✅ | ✅ | ✅ | ❌ |
-| **الإعدادات** | | | | |
-| عرض | ✅ | ✅ | ❌ | ❌ |
-| تعديل | ✅ | ❌ | ❌ | ❌ |
-| **الفريق** | | | | |
-| إدارة المستخدمين | ✅ | ❌ | ❌ | ❌ |
-| **التحليلات** | | | | |
-| عرض | ✅ | ✅ | ❌ | ❌ |
-| **سجل التدقيق** | | | | |
-| عرض | ✅ | ❌ | ❌ | ❌ |
+| Permission | ADMIN | MANAGER | AGENT | VIEWER |
+|-----------|:-----:|:-------:|:-----:|:------:|
+| **Projects** | | | | |
+| View | ✅ | ✅ | ✅ | ✅ |
+| Create / Edit | ✅ | ✅ | ✅ | ❌ |
+| Delete | ✅ | ❌ | ❌ | ❌ |
+| **Comparable Entries** | | | | |
+| View | ✅ | ✅ | ✅ | ✅ |
+| Create / Edit | ✅ | ✅ | ✅ | ❌ |
+| Delete | ✅ | ✅ | ❌ | ❌ |
+| **Valuation Links** | | | | |
+| View | ✅ | ✅ | ✅ | ❌ |
+| Create / Edit | ✅ | ✅ | ✅ | ❌ |
+| Delete / Disable | ✅ | ✅ | ❌ | ❌ |
+| **Leads** | | | | |
+| View all leads | ✅ | ✅ | ❌ | ❌ |
+| View assigned leads | ✅ | ✅ | ✅ | ❌ |
+| Update lead status | ✅ | ✅ | ✅ | ❌ |
+| Assign to agent | ✅ | ✅ | ❌ | ❌ |
+| **Reports** | | | | |
+| View all reports | ✅ | ✅ | ❌ | ❌ |
+| View assigned reports | ✅ | ✅ | ✅ | ❌ |
+| Generate PDF | ✅ | ✅ | ✅ | ❌ |
+| Add specialist assessment | ✅ | ✅ | ✅ | ❌ |
+| **Settings** | | | | |
+| View | ✅ | ✅ | ❌ | ❌ |
+| Edit | ✅ | ❌ | ❌ | ❌ |
+| **Team Management** | | | | |
+| Manage users | ✅ | ❌ | ❌ | ❌ |
+| **Analytics** | | | | |
+| View | ✅ | ✅ | ❌ | ❌ |
+| **Audit Log** | | | | |
+| View | ✅ | ❌ | ❌ | ❌ |
 
-### حماية المسارات
+### Route Protection
 
-**ملف:** `middleware.ts`
+**File:** `middleware.ts`
 
 ```
-محمية (تسجيل دخول مطلوب):   /admin/*
-مقيَّدة بدور ADMIN فقط:      /admin/settings
-                              /admin/audit
-                              /admin/team
-عامة (بدون تسجيل دخول):     /v/[token]
-                              /login
-                              /api/public/*
-                              /api/auth/*
-                              /api/health
+Authenticated (login required):       /admin/*
+
+ADMIN-only:                            /admin/settings
+                                       /admin/audit
+                                       /admin/team
+
+Public (no authentication):            /v/[token]
+                                       /login
+                                       /api/public/*
+                                       /api/auth/*
+                                       /api/health
 ```
 
 ---
 
-## روابط التقييم
+## Valuation Links
 
-### دورة حياة الرابط
+### Link Lifecycle
 
 ```
-إنشاء الرابط (ADMIN / MANAGER / AGENT)
-  │  خيارات: label، expiresAt، maxUses، agentId (للإسناد)
+Create link (ADMIN / MANAGER / AGENT)
+  │  Options: label, expiresAt, maxUses, agentId
   ▼
-الرابط العام: https://domain.com/v/{linkId}
+Public URL: https://domain.com/v/{linkId}
   │
   ▼
-العميل يفتح الرابط
-  │  التحقق: status = ACTIVE
-  │           لم يتجاوز expiresAt
-  │           usedCount < maxUses (أو maxUses = null)
+Client opens URL
+  │  Checks: status = ACTIVE
+  │           has not passed expiresAt
+  │           usedCount < maxUses  (or maxUses is null → unlimited)
   ▼
-العميل يرسل النموذج
+Client submits form
   │  usedCount += 1
   ▼
-Lead جديد منسوب للرابط وللموظف المُنشئ
+New Lead attributed to this link and the creating agent
 ```
 
-### ما يمكن تخصيصه لكل رابط
+### Per-Link Options
 
-| الخيار | الوصف | مثال |
-|--------|-------|-------|
-| `label` | اسم وصفي | "حملة إنستغرام — أكتوبر" |
-| `expiresAt` | تاريخ انتهاء الصلاحية | 2024-12-31 |
-| `maxUses` | حد الاستخدام | 100 |
-| `agentId` | نسب Leads لموظف معين | — |
+| Option | Description | Example |
+|--------|-------------|---------|
+| `label` | Descriptive name | "Instagram Campaign — Oct" |
+| `expiresAt` | Expiry date | 2024-12-31 |
+| `maxUses` | Usage cap | 100 |
+| `agentId` | Attribute leads to a specific agent | — |
 
 ---
 
-## توليد تقارير PDF
+## PDF Report Generation
 
-**الملفات:** `src/pdf/`
+**Files:** `src/pdf/`
 
-### خط أنابيب التوليد
+### Generation Pipeline
 
 ```
-[1] العميل يُرسل → Report{status: QUEUED} يُنشأ
-[2] مهمة تُضاف إلى BullMQ (Redis)
-[3] Worker يلتقط المهمة:
+[1] Client submits form
+      → Report { status: QUEUED } created in DB
+[2] Job enqueued to BullMQ (Redis)
+[3] Worker picks up job:
       renderHtml.ts:
-        → Lead + ValuationResult + SpecialistAssessment من DB
-        → إعدادات Branding (شعار، ألوان، إخلاء مسؤولية)
-        → buildReportHtml() → سلسلة HTML كاملة
+        → Load Lead + ValuationResult + SpecialistAssessment from DB
+        → Load Branding settings (logo, colors, disclaimer)
+        → buildReportHtml() → complete HTML string
 [4] generatePdf.ts:
-      → Puppeteer يشغّل Chrome بدون واجهة
-      → HTML → PDF (A4، بدون هوامش، خلفية مطبوعة)
-      → يحسب SHA256 checksum
-      → يُرجع buffer + checksum + fileSize
-[5] Report{status: READY, pdfData: buffer} يُحدَّث في DB
+      → Puppeteer launches headless Chrome
+      → HTML → PDF (A4 format, no margins, print background enabled)
+      → Compute SHA-256 checksum
+      → Return buffer + checksum + fileSize
+[5] Report { status: READY, pdfData: buffer } updated in DB
 ```
 
-### محتوى تقرير PDF
+### Report Sections
 
-| القسم | الوصف |
-|-------|-------|
-| الترويسة | شعار الشركة، اسمها، بيانات الاتصال |
-| ملخص العقار | النوع، الغرف، المساحة، السعر المطلوب |
-| الحكم والثقة | Verdict + درجة الثقة (0-100) |
-| مقارنات قوائم البيع | الموقع، السعر، المساحة، PSF |
-| مقارنات معاملات DLD | التاريخ، السعر، المساحة، PSF |
-| تقييم المشروع | Area vs Project Valuation |
-| تقييم المختص | إذا أُضيف من الإدارة |
-| التفسيرات | سبب الحكم، شرح البيانات |
-| التذييل | تاريخ التوليد + إخلاء المسؤولية |
+| Section | Content |
+|---------|---------|
+| Header | Company logo, name, contact info |
+| Property summary | Type, bedrooms, area, client asking price |
+| Verdict & confidence | Verdict label + confidence score (0–100) |
+| Listing comparables | Location, price, area, PSF for each comp |
+| DLD transaction comparables | Date, price, area, PSF |
+| Project-level valuation | Area vs project comparison |
+| Specialist assessment | If added by admin/agent |
+| Explanations | Plain-language verdict rationale |
+| Footer | Generation timestamp + legal disclaimer |
 
-### مصادر Chrome (بالترتيب)
+### Chrome Resolution Order
 
 ```
-[1] PUPPETEER_EXECUTABLE_PATH  (متغير بيئة — الأولوية القصوى)
-[2] @sparticuz/chromium         (للبيئات المحدودة: Docker/Lambda)
-[3] Chrome المثبَّت على النظام  (/usr/bin/google-chrome-stable…)
-[4] puppeteer الكامل            (Chrome مُنزَّل عند npm install)
+[1] PUPPETEER_EXECUTABLE_PATH   (env var — highest priority)
+[2] @sparticuz/chromium          (for restricted Linux / Docker)
+[3] System Chrome                (/usr/bin/google-chrome-stable, etc.)
+[4] Full puppeteer package       (Chrome downloaded during npm install)
 ```
 
 ---
 
-## واجهات API الكاملة
+## Full API Reference
 
-### المصادقة
+### Authentication
 
-| المسار | الطريقة | الوصف |
-|--------|---------|-------|
-| `/api/auth/[...nextauth]` | GET/POST | NextAuth.js (دخول/خروج/session) |
-| `/api/auth/forgot-password` | POST | طلب إعادة تعيين كلمة المرور |
-| `/api/auth/reset-password` | POST | إكمال إعادة التعيين بالرمز |
+| Path | Method | Description |
+|------|--------|-------------|
+| `/api/auth/[...nextauth]` | GET/POST | NextAuth.js — sign in / sign out / session |
+| `/api/auth/forgot-password` | POST | Initiate password reset |
+| `/api/auth/reset-password` | POST | Complete reset with token |
 
-### المشاريع
+### Projects
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/projects` | GET | جميع | قائمة (search, isActive, category, page, sort) |
-| `/api/projects` | POST | ADMIN, MANAGER | إنشاء مشروع |
-| `/api/projects/[id]` | GET | جميع | تفاصيل مشروع |
-| `/api/projects/[id]` | PATCH | ADMIN, MANAGER | تعديل مشروع |
-| `/api/projects/[id]` | DELETE | ADMIN | تعطيل مشروع |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/projects` | GET | All roles | List projects — supports `search`, `isActive`, `category`, `page`, `pageSize`, `sort` |
+| `/api/projects` | POST | ADMIN, MANAGER | Create project |
+| `/api/projects/[id]` | GET | All roles | Project details |
+| `/api/projects/[id]` | PATCH | ADMIN, MANAGER | Update project |
+| `/api/projects/[id]` | DELETE | ADMIN | Soft-delete project |
 
-### المقارنات
+### Comparable Entries
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/projects/[id]/entries` | GET | جميع | قائمة (sourceType, propertyType, bedrooms) |
-| `/api/projects/[id]/entries` | POST | ADMIN, MANAGER, AGENT | إضافة مقارنة |
-| `/api/projects/[id]/entries/import` | POST | ADMIN, MANAGER, AGENT | استيراد مجموعة |
-| `/api/projects/[id]/entries/[eId]` | GET | جميع | تفاصيل مقارنة |
-| `/api/projects/[id]/entries/[eId]` | PATCH | ADMIN, MANAGER, AGENT | تعديل (يعيد حساب PSF) |
-| `/api/projects/[id]/entries/[eId]` | DELETE | ADMIN, MANAGER | تعطيل |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/projects/[id]/entries` | GET | All roles | List entries — supports `sourceType`, `propertyType`, `bedrooms`, `isActive` |
+| `/api/projects/[id]/entries` | POST | ADMIN, MANAGER, AGENT | Create entry |
+| `/api/projects/[id]/entries/import` | POST | ADMIN, MANAGER, AGENT | Bulk import |
+| `/api/projects/[id]/entries/[eId]` | GET | All roles | Entry details |
+| `/api/projects/[id]/entries/[eId]` | PATCH | ADMIN, MANAGER, AGENT | Update (recalculates PSF) |
+| `/api/projects/[id]/entries/[eId]` | DELETE | ADMIN, MANAGER | Soft-delete |
 
-### روابط التقييم
+### Valuation Links
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/projects/[id]/links` | GET | ADMIN, MANAGER, AGENT | قائمة الروابط |
-| `/api/projects/[id]/links` | POST | ADMIN, MANAGER, AGENT | إنشاء رابط |
-| `/api/projects/[id]/links/[lId]` | GET | ADMIN, MANAGER, AGENT | تفاصيل رابط |
-| `/api/projects/[id]/links/[lId]` | PATCH | ADMIN, MANAGER, AGENT | تعديل رابط |
-| `/api/projects/[id]/links/[lId]` | DELETE | ADMIN, MANAGER | حذف رابط |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/projects/[id]/links` | GET | ADMIN, MANAGER, AGENT | List links |
+| `/api/projects/[id]/links` | POST | ADMIN, MANAGER, AGENT | Create link |
+| `/api/projects/[id]/links/[lId]` | GET | ADMIN, MANAGER, AGENT | Link details |
+| `/api/projects/[id]/links/[lId]` | PATCH | ADMIN, MANAGER, AGENT | Update link |
+| `/api/projects/[id]/links/[lId]` | DELETE | ADMIN, MANAGER | Delete link |
 
-### التقييم العام (بدون تسجيل دخول)
+### Public Valuation (unauthenticated)
 
-| المسار | الطريقة | الوصف |
-|--------|---------|-------|
-| `/api/public/v/[token]/meta` | GET | بيانات المشروع لتهيئة النموذج |
-| `/api/public/v/[token]/submit` | POST | **إرسال التقييم** (rate-limited: 5/min/IP) |
-| `/api/public/v/report/[leadId]` | GET | تنزيل تقرير PDF |
+| Path | Method | Description |
+|------|--------|-------------|
+| `/api/public/v/[token]/meta` | GET | Project metadata to pre-fill the form |
+| `/api/public/v/[token]/submit` | POST | **Main valuation endpoint** — rate-limited (5 req/min/IP) |
+| `/api/public/v/report/[leadId]` | GET | Download PDF report |
 
-### العملاء المحتملين
+### Leads
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/leads` | GET | ADMIN, MANAGER | قائمة (status, verdict, projectId, dateFrom/To) |
-| `/api/leads/[id]` | GET | ADMIN, MANAGER, AGENT | تفاصيل |
-| `/api/leads/[id]` | PATCH | ADMIN, MANAGER, AGENT | تعديل بيانات الاتصال |
-| `/api/leads/[id]/status` | PATCH | ADMIN, MANAGER, AGENT | تحديث الحالة |
-| `/api/leads/[id]/assign` | PATCH | ADMIN, MANAGER | تكليف موظف |
-| `/api/leads/[id]/revalue` | POST | ADMIN, MANAGER | إعادة التقييم |
-| `/api/leads/[id]/specialist-assessment` | GET/POST | ADMIN, MANAGER, AGENT | تقييم المختص |
-| `/api/leads/[id]/report` | GET | ADMIN, MANAGER, AGENT | حالة التقرير |
-| `/api/leads/[id]/report` | POST | ADMIN, MANAGER, AGENT | توليد PDF مباشرة |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/leads` | GET | ADMIN, MANAGER | List — supports `status`, `verdict`, `projectId`, `assignedAgentId`, `search`, `dateFrom`, `dateTo`, `page`, `pageSize` |
+| `/api/leads/[id]` | GET | ADMIN, MANAGER, AGENT | Lead details + valuation result |
+| `/api/leads/[id]` | PATCH | ADMIN, MANAGER, AGENT | Update contact info / notes |
+| `/api/leads/[id]/status` | PATCH | ADMIN, MANAGER, AGENT | Update pipeline status |
+| `/api/leads/[id]/assign` | PATCH | ADMIN, MANAGER | Assign to agent |
+| `/api/leads/[id]/revalue` | POST | ADMIN, MANAGER | Re-run valuation engine |
+| `/api/leads/[id]/specialist-assessment` | GET/POST | ADMIN, MANAGER, AGENT | Read / create specialist override |
+| `/api/leads/[id]/report` | GET | ADMIN, MANAGER, AGENT | Report status |
+| `/api/leads/[id]/report` | POST | ADMIN, MANAGER, AGENT | Trigger PDF generation immediately |
 
-### التحليلات
+### Analytics
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/dashboard/kpis` | GET | ADMIN, MANAGER | مؤشرات الأداء الرئيسية |
-| `/api/analytics/market` | GET | ADMIN, MANAGER | اتجاهات أسعار السوق |
-| `/api/analytics/areas` | GET | ADMIN, MANAGER | تحليل PSF حسب المنطقة |
-| `/api/analytics/areas-breakdown` | GET | ADMIN, MANAGER | إحصاءات تفصيلية |
-| `/api/analytics/projects` | GET | ADMIN, MANAGER | أداء المشاريع |
-| `/api/analytics/report` | GET | ADMIN, MANAGER | تقرير تحليلي شامل |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/dashboard/kpis` | GET | ADMIN, MANAGER | Key performance indicators |
+| `/api/analytics/market` | GET | ADMIN, MANAGER | Market price trends |
+| `/api/analytics/areas` | GET | ADMIN, MANAGER | PSF analysis by location |
+| `/api/analytics/areas-breakdown` | GET | ADMIN, MANAGER | Detailed area statistics |
+| `/api/analytics/projects` | GET | ADMIN, MANAGER | Per-project performance |
+| `/api/analytics/report` | GET | ADMIN, MANAGER | Comprehensive analytics report |
 
-### الإعدادات والفريق
+### Settings & Team
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/settings/valuation-rules` | GET/PUT | ADMIN | قواعد التقييم |
-| `/api/settings/branding` | GET/PUT | ADMIN | هوية الشركة |
-| `/api/team` | GET, POST | ADMIN | قائمة / إنشاء مستخدم |
-| `/api/team/[uId]` | GET, PATCH, DELETE | ADMIN | إدارة مستخدم |
-| `/api/audit` | GET | ADMIN | سجل التدقيق |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/settings/valuation-rules` | GET/PUT | ADMIN | Engine config (tolerance, thresholds, benchmark…) |
+| `/api/settings/branding` | GET/PUT | ADMIN | Company branding (logo, colors, disclaimer) |
+| `/api/team` | GET, POST | ADMIN | List / create users |
+| `/api/team/[uId]` | GET, PATCH, DELETE | ADMIN | Manage user |
+| `/api/audit` | GET | ADMIN | Audit log |
 
-### الأدوات
+### Utilities
 
-| المسار | الطريقة | الصلاحية | الوصف |
-|--------|---------|----------|-------|
-| `/api/tools/pf-scrape` | POST | ADMIN, MANAGER, AGENT | استخراج قوائم من PropertyFinder |
-| `/api/health` | GET | عام | فحص صحة الخادم |
+| Path | Method | Auth | Description |
+|------|--------|------|-------------|
+| `/api/tools/pf-scrape` | POST | ADMIN, MANAGER, AGENT | Scrape listings from PropertyFinder |
+| `/api/health` | GET | Public | Health check |
 
 ---
 
-## لوحة الإدارة
+## Admin Dashboard
 
-| القسم | المسار | الوصف | الصلاحية |
-|-------|--------|-------|----------|
-| Dashboard | `/admin` | KPIs وآخر العملاء | جميع |
-| العملاء | `/admin/leads` | قائمة مع تصفية متقدمة | جميع |
-| تفاصيل العميل | `/admin/leads/[id]` | التقييم الثلاثي + سير الحالة | جميع |
-| المشاريع | `/admin/projects` | قائمة + إنشاء + إحصاءات | جميع |
-| المقارنات | `/admin/projects/[id]/entries` | إدارة قوائم البيع والمعاملات | ADMIN, MANAGER, AGENT |
-| روابط التقييم | `/admin/projects/[id]/links` | إنشاء وإدارة الروابط العامة | ADMIN, MANAGER, AGENT |
-| التحليلات | `/admin/analytics` | رسوم بيانية لاتجاهات السوق | ADMIN, MANAGER |
-| التقارير | `/admin/reports` | عرض وتنزيل تقارير PDF | ADMIN, MANAGER, AGENT |
-| استيراد القوائم | `/admin/tools/import-listings` | استيراد من PropertyFinder | ADMIN, MANAGER, AGENT |
-| الفريق | `/admin/team` | إدارة المستخدمين والأدوار | ADMIN |
-| الإعدادات | `/admin/settings` | قواعد التقييم + الهوية البصرية | ADMIN |
-| سجل التدقيق | `/admin/audit` | سجل لا يقبل التعديل | ADMIN |
+| Section | Path | Description | Required Role |
+|---------|------|-------------|--------------|
+| Dashboard | `/admin` | KPIs + recent leads | All |
+| Leads | `/admin/leads` | List with advanced filters | All |
+| Lead Detail | `/admin/leads/[id]` | Triple valuation cards + pipeline | All |
+| Projects | `/admin/projects` | List + create + stats | All |
+| Entries | `/admin/projects/[id]/entries` | Manage listing & transaction comps | ADMIN, MANAGER, AGENT |
+| Valuation Links | `/admin/projects/[id]/links` | Create / manage public links | ADMIN, MANAGER, AGENT |
+| Analytics | `/admin/analytics` | Market trend charts | ADMIN, MANAGER |
+| Reports | `/admin/reports` | View / download PDFs | ADMIN, MANAGER, AGENT |
+| Import Listings | `/admin/tools/import-listings` | Bulk import from PropertyFinder | ADMIN, MANAGER, AGENT |
+| Team | `/admin/team` | Manage users & roles | ADMIN |
+| Settings | `/admin/settings` | Valuation rules + branding | ADMIN |
+| Audit Log | `/admin/audit` | Immutable activity log | ADMIN |
 
-### مسار حياة العميل المحتمل
+### Lead Pipeline
 
 ```
 NEW ──► CONTACTED ──► QUALIFIED ──► APPOINTMENT_SET ──► WON
-                                                     └──► LOST
-                                                     └──► ARCHIVED
+                                                    └──► LOST
+                                                    └──► ARCHIVED
 ```
 
 ---
 
-## متغيرات البيئة
+## Environment Variables
 
 ```env
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# التطبيق
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Application
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NEXT_PUBLIC_APP_URL=https://yourdomain.com
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# قاعدة البيانات
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Database
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DATABASE_URL="mysql://user:password@host:3306/ist_valuation"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# المصادقة (NextAuth.js)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Authentication (NextAuth.js)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NEXTAUTH_URL=https://yourdomain.com
 NEXTAUTH_SECRET=minimum-32-character-random-secret
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# قائمة المهام الخلفية (BullMQ)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Background Jobs (BullMQ)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REDIS_URL=redis://localhost:6379
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# البريد الإلكتروني
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Email
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EMAIL_FROM=noreply@yourcompany.com
 
-# الخيار أ: Resend (موصى به)
+# Option A: Resend (recommended)
 EMAIL_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
 
-# الخيار ب: SMTP عام
+# Option B: Generic SMTP
 SMTP_HOST=smtp.yourprovider.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-smtp-username
 SMTP_PASS=your-smtp-password
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# توليد PDF (اختياري)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# يحدد مسار Chrome/Chromium يدوياً
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PDF Generation (optional)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Override Chrome/Chromium binary path
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# S3 / Cloudflare R2 (اختياري)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# S3 / Cloudflare R2 (optional)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 S3_BUCKET=ist-reports
 S3_REGION=auto
 S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
@@ -869,51 +900,51 @@ S3_SECRET_ACCESS_KEY=your-secret-key
 
 ---
 
-## التثبيت والتشغيل
+## Installation & Running
 
-### المتطلبات
+### Prerequisites
 
 - Node.js ≥ 18
 - MySQL 8+
 - Redis ≥ 6
 
-### التثبيت المحلي
+### Local Development
 
 ```bash
-# 1. استنساخ المستودع
+# 1. Clone the repository
 git clone https://github.com/mertsadekist/propintels.git
 cd ist-valuation-platform
 
-# 2. تثبيت الاعتماديات
+# 2. Install dependencies
 npm install
 
-# 3. إعداد متغيرات البيئة
+# 3. Set up environment variables
 cp .env.example .env
-# عدّل .env بقيمك الفعلية
+# Edit .env with your actual values
 
-# 4. إنشاء الجداول
+# 4. Create database tables
 npx prisma db push
 
-# 5. تشغيل بيئة التطوير
+# 5. Start development server
 npm run dev        # http://localhost:3000
 
-# 6. تشغيل الاختبارات
+# 6. Run tests
 npm test
 
-# 7. البناء للإنتاج
+# 7. Production build
 npm run build
 npm start
 ```
 
-### النشر بـ Docker / Coolify
+### Docker / Coolify Deployment
 
-المشروع مُعدَّ لـ Next.js Standalone output:
+The project is configured for Next.js standalone output:
 
 ```bash
-# بناء الصورة
+# Build image
 docker build -t ist-valuation .
 
-# تشغيل الحاوية
+# Run container
 docker run -p 3000:3000 \
   -e DATABASE_URL="mysql://..." \
   -e NEXTAUTH_SECRET="..." \
@@ -922,83 +953,83 @@ docker run -p 3000:3000 \
   ist-valuation
 ```
 
-للنشر على **Coolify**: اربط المستودع `mertsadekist/propintels` وحدد فرع `master` — سيعمل بناء Docker تلقائياً عند كل `git push`.
+For **Coolify**: connect the `mertsadekist/propintels` repository to the `master` branch — Docker builds and deploys automatically on every `git push`.
 
 ---
 
-## بنية الملفات
+## Project Structure
 
 ```
 ist-valuation-platform/
 │
-├── app/                               # Next.js App Router
-│   ├── (admin)/admin/                 # لوحة الإدارة (authenticated)
-│   │   ├── analytics/                 # التحليلات والرسوم البيانية
-│   │   ├── audit/                     # سجل التدقيق
-│   │   ├── leads/[leadId]/            # إدارة العملاء (التقييم الثلاثي)
+├── app/                                  # Next.js App Router
+│   ├── (admin)/admin/                    # Admin dashboard (authenticated)
+│   │   ├── analytics/                    # Market trend charts
+│   │   ├── audit/                        # Immutable audit log
+│   │   ├── leads/[leadId]/               # Lead detail (triple valuation cards)
 │   │   ├── projects/[projectId]/
-│   │   │   ├── entries/               # إدارة المقارنات
-│   │   │   └── links/                 # روابط التقييم
-│   │   ├── reports/                   # عرض وتنزيل PDF
+│   │   │   ├── entries/                  # Comparable entry management
+│   │   │   └── links/                    # Valuation link management
+│   │   ├── reports/                      # PDF report list + download
 │   │   ├── settings/
-│   │   │   ├── branding/              # الهوية البصرية
-│   │   │   └── valuation-rules/       # قواعد محرك التقييم
-│   │   ├── team/                      # إدارة المستخدمين
-│   │   └── tools/import-listings/     # استيراد من PropertyFinder
-│   ├── (auth)/                        # تسجيل الدخول وإعادة التعيين
-│   ├── (public)/v/[token]/            # نموذج العميل العام (3 خطوات)
-│   └── api/                           # API Routes
-│       ├── auth/                      # NextAuth + password reset
-│       ├── analytics/                 # إحصاءات السوق
-│       ├── dashboard/                 # KPIs
-│       ├── leads/[leadId]/            # إدارة العملاء
-│       ├── projects/[projectId]/      # المشاريع + المقارنات + الروابط
-│       ├── public/v/                  # Endpoints عامة
-│       ├── settings/                  # الإعدادات
-│       ├── team/                      # الفريق
-│       └── tools/                     # الأدوات (pf-scrape)
+│   │   │   ├── branding/                 # Company branding settings
+│   │   │   └── valuation-rules/          # Engine configuration
+│   │   ├── team/                         # User management
+│   │   └── tools/import-listings/        # PropertyFinder bulk import
+│   ├── (auth)/                           # Login & password reset pages
+│   ├── (public)/v/[token]/               # Public 3-step valuation form
+│   └── api/                              # API routes
+│       ├── auth/                         # NextAuth.js + password reset
+│       ├── analytics/                    # Market statistics
+│       ├── dashboard/                    # KPI endpoints
+│       ├── leads/[leadId]/               # Lead management
+│       ├── projects/[projectId]/         # Projects + entries + links
+│       ├── public/v/                     # Unauthenticated endpoints
+│       ├── settings/                     # Configuration endpoints
+│       ├── team/                         # Team management
+│       └── tools/                        # Utility endpoints (pf-scrape)
 │
 ├── src/
 │   ├── auth/
-│   │   ├── auth.config.ts             # إعداد NextAuth.js
-│   │   └── rbac.ts                    # تعريف الصلاحيات
+│   │   ├── auth.config.ts                # NextAuth.js configuration
+│   │   └── rbac.ts                       # Role & permission definitions
 │   ├── components/
-│   │   ├── admin/                     # مكونات لوحة الإدارة
-│   │   ├── public/                    # مكونات النموذج العام
-│   │   └── ui/                        # shadcn/ui (Radix-based)
-│   ├── db/                            # Prisma client + repositories
-│   ├── jobs/                          # BullMQ workers (PDF queue)
+│   │   ├── admin/                        # Admin UI components
+│   │   ├── public/                       # Public form components
+│   │   └── ui/                           # shadcn/ui (Radix-based)
+│   ├── db/                               # Prisma client + repository layer
+│   ├── jobs/                             # BullMQ workers (PDF queue)
 │   ├── notifications/
-│   │   ├── mail.ts                    # SMTP / Resend adapter
-│   │   └── templates/                 # قوالب البريد الإلكتروني
+│   │   ├── mail.ts                       # Resend / SMTP adapter
+│   │   └── templates/                    # Email templates
 │   ├── pdf/
-│   │   ├── generatePdf.ts             # Puppeteer → PDF buffer
-│   │   ├── renderHtml.ts              # بناء HTML من البيانات
-│   │   └── templates/report.template.ts  # قالب تقرير PDF
+│   │   ├── generatePdf.ts                # Puppeteer → PDF buffer
+│   │   ├── renderHtml.ts                 # Data + branding → HTML string
+│   │   └── templates/report.template.ts  # PDF report HTML template
 │   ├── valuation/
-│   │   ├── engine.ts                  # الخوارزمية الرئيسية
-│   │   ├── matching.ts                # اختيار المقارنات (Two-Pass)
-│   │   ├── outliers.ts                # إزالة الشواذ (Trim10 / IQR)
-│   │   ├── scoring.ts                 # درجة الثقة (0–100)
-│   │   ├── stats.ts                   # الإحصاء الوصفي + Benchmark
-│   │   └── verdict.ts                 # الحكم على السعر
-│   └── validation/                    # مخططات Zod
+│   │   ├── engine.ts                     # Core valuation algorithm
+│   │   ├── matching.ts                   # Two-pass comparable selection
+│   │   ├── outliers.ts                   # Trim10 / IQR outlier removal
+│   │   ├── scoring.ts                    # Confidence score (0–100)
+│   │   ├── stats.ts                      # Descriptive stats + benchmark
+│   │   └── verdict.ts                    # Price verdict computation
+│   └── validation/                       # Zod schemas
 │
 ├── prisma/
-│   └── schema.prisma                  # تعريف قاعدة البيانات (MySQL)
+│   └── schema.prisma                     # MySQL database schema
 │
-├── public/                            # الأصول الثابتة
-├── middleware.ts                       # حماية مسارات /admin/*
-├── next.config.mjs                    # output: 'standalone' + إعدادات
+├── public/                               # Static assets
+├── middleware.ts                          # Route protection
+├── next.config.mjs                       # Next.js config (standalone output)
 └── package.json
 ```
 
 ---
 
-## الترخيص
+## License
 
-هذا المشروع مملوك لـ **IST Valuation**. جميع الحقوق محفوظة.
+This project is proprietary software owned by **IST Valuation**. All rights reserved.
 
 ---
 
-*آخر تحديث: مارس 2026*
+*Last updated: March 2026*
