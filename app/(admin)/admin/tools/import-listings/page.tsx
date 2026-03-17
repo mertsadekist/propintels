@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,21 +76,23 @@ const PROPERTY_TYPE_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
-// ── Searchable Project Combobox ──────────────────────────────────────────────
+// ── Searchable Project Combobox (server-side search) ─────────────────────────
 function ProjectCombobox({
-  projects,
   value,
   onChange,
+  onSelect,
 }: {
-  projects: Project[];
   value: string;
   onChange: (id: string) => void;
+  onSelect?: (project: Project | null) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<Project[]>([]);
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [searching, setSearching] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const selected = projects.find((p) => p.id === value);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -103,22 +105,49 @@ function ProjectCombobox({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const filtered = query.trim()
-    ? projects.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          (p.location ?? "").toLowerCase().includes(query.toLowerCase())
-      )
-    : projects;
+  // Fetch results from server with debounce
+  const fetchProjects = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ pageSize: "50", isActive: "true" });
+        if (q.trim()) params.set("search", q.trim());
+        const res = await fetch(`/api/projects?${params}`);
+        const json = await res.json();
+        setResults(json.data ?? []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+  }, []);
+
+  // Load initial results on open
+  useEffect(() => {
+    if (open) fetchProjects(query);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Re-fetch when query changes
+  useEffect(() => {
+    if (open) fetchProjects(query);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   function handleSelect(p: Project) {
     onChange(p.id);
+    setSelected(p);
+    onSelect?.(p);
     setQuery("");
     setOpen(false);
   }
 
   function handleClear() {
     onChange("");
+    setSelected(null);
+    onSelect?.(null);
     setQuery("");
   }
 
@@ -126,7 +155,11 @@ function ProjectCombobox({
     <div ref={containerRef} className="relative">
       {/* Input */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        {searching ? (
+          <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 animate-spin pointer-events-none" />
+        ) : (
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+        )}
         <Input
           className="pl-9 pr-8"
           placeholder="Search project by name or location…"
@@ -165,12 +198,16 @@ function ProjectCombobox({
       {/* Dropdown */}
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-          {filtered.length === 0 ? (
+          {searching ? (
+            <div className="px-3 py-4 text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Searching…
+            </div>
+          ) : results.length === 0 ? (
             <div className="px-3 py-4 text-sm text-gray-400 text-center">
-              No projects match &ldquo;{query}&rdquo;
+              {query.trim() ? <>No projects match &ldquo;{query}&rdquo;</> : "No projects found"}
             </div>
           ) : (
-            filtered.map((p) => (
+            results.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -200,8 +237,8 @@ export default function ImportListingsPage() {
 
   // Step 1
   const [url, setUrl] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [fetching, setFetching] = useState(false);
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
@@ -213,15 +250,6 @@ export default function ImportListingsPage() {
   const [importing, setImporting] = useState(false);
   const [importedCount, setImportedCount] = useState<number | null>(null);
 
-  // Load all projects for combobox
-  useEffect(() => {
-    fetch("/api/projects?pageSize=500&isActive=true")
-      .then((r) => r.json())
-      .then((j) => setProjects(j.data ?? []))
-      .catch(console.error);
-  }, []);
-
-  const selectedProject = projects.find((p) => p.id === projectId);
   const selectedCount = listings.filter((l) => l.selected).length;
 
   // Step 1 → Fetch
@@ -334,6 +362,7 @@ export default function ImportListingsPage() {
     setStep(1);
     setUrl("");
     setProjectId("");
+    setSelectedProject(null);
     setListings([]);
     setImportedCount(null);
     setFetchMessage(null);
@@ -412,9 +441,9 @@ export default function ImportListingsPage() {
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">Target Project</label>
               <ProjectCombobox
-                projects={projects}
                 value={projectId}
                 onChange={setProjectId}
+                onSelect={setSelectedProject}
               />
               <p className="text-xs text-gray-400">
                 Listings will be imported as entries into this project.
