@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get("page") ?? "1");
-  const pageSize = Math.min(parseInt(searchParams.get("pageSize") ?? "20"), 100);
+  const pageSize = Math.min(parseInt(searchParams.get("pageSize") ?? "20"), 1000);
   const isActiveParam = searchParams.get("isActive");
   // "true" → active only, "false" → inactive only, absent/empty → all
   const isActive =
