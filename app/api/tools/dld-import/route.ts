@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
 
   // Batch-lookup existing projects (case-insensitive)
   const existing = await prisma.project.findMany({
-    where: { name: { in: uniqueKeys, mode: "insensitive" } },
+    where: { name: { in: uniqueKeys } },
     select: { id: true, name: true },
   });
 
