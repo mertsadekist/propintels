@@ -13,6 +13,7 @@ import {
   ChevronRight,
   BarChart2,
   DatabaseZap,
+  FileUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Leads", href: "/admin/leads", icon: Users },
   { label: "Reports", href: "/admin/reports", icon: FileText },
   { label: "Import Listings", href: "/admin/tools/import-listings", icon: DatabaseZap, roles: ["ADMIN", "MANAGER"] },
+  { label: "Import DLD",      href: "/admin/tools/import-dld",      icon: FileUp,      roles: ["ADMIN", "MANAGER"] },
   { label: "Team", href: "/admin/team", icon: Shield, roles: ["ADMIN"] },
   { label: "Settings", href: "/admin/settings", icon: Settings, roles: ["ADMIN"] },
   { label: "Audit Logs", href: "/admin/audit", icon: ClipboardList, roles: ["ADMIN"] },
