@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   const projectKeyFor = (r: typeof rows[0]) =>
     (r.projectNameEn?.trim() || r.areaNameEn.trim());
 
-  const uniqueKeys = [...new Set(rows.map(projectKeyFor))];
+  const uniqueKeys = Array.from(new Set(rows.map(projectKeyFor)));
 
   // Batch-lookup existing projects (case-insensitive)
   const existing = await prisma.project.findMany({
