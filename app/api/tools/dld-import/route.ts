@@ -3,6 +3,7 @@ import { withAuth } from "@/auth/session";
 import { prisma } from "@/db/prisma";
 import { logAudit } from "@/audit/logger";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 
 // ── Validation schema ─────────────────────────────────────────────────────────
 
@@ -144,8 +145,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Build entry payload ────────────────────────────────────────────────────
-  type EntryData = Parameters<typeof prisma.entry.createMany>[0]["data"][number];
-  const entries: EntryData[] = [];
+  const entries: Prisma.EntryCreateManyInput[] = [];
   let skipped = 0;
 
   for (const row of rows) {
