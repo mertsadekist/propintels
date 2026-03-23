@@ -6,6 +6,7 @@ import { PriceTrendChart } from "./price-trend-chart";
 import { TrendDrillDown } from "./trend-drill-down";
 import { MarketIntelligence } from "./market-intelligence";
 import { AreaComparisonTable, type AreaSortBy, type SortDir } from "./area-comparison-table";
+import { PriceMatrixBox } from "./price-matrix-box";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileDown, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -360,6 +361,9 @@ export function AnalyticsDashboard() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Price Matrix — Area × Bedroom & Project × Bedroom */}
+          <PriceMatrixBox filters={filters} />
 
           {/* Market Intelligence */}
           {topAreas.length > 0 && (
