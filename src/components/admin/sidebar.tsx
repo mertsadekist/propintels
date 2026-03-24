@@ -22,6 +22,9 @@ import {
   PieChart,
   CalendarDays,
   BrainCircuit,
+  DollarSign,
+  TrendingDown,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +57,9 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Property Mix",        href: "/admin/analytics/property-mix",   icon: PieChart,      roles: ["ADMIN", "MANAGER"] },
       { label: "Volume Tracker",      href: "/admin/analytics/volume",         icon: CalendarDays,  roles: ["ADMIN", "MANAGER"] },
       { label: "Valuation Insights",  href: "/admin/analytics/valuations",     icon: BrainCircuit,  roles: ["ADMIN", "MANAGER"] },
+      { label: "Price Trends",        href: "/admin/analytics/price-trends",   icon: DollarSign,    roles: ["ADMIN", "MANAGER"] },
+      { label: "Price Changes",       href: "/admin/analytics/price-change",   icon: TrendingDown,  roles: ["ADMIN", "MANAGER"] },
+      { label: "Deal Segments",       href: "/admin/analytics/deal-segments",  icon: Layers,        roles: ["ADMIN", "MANAGER"] },
     ],
   },
   { label: "Leads",   href: "/admin/leads",   icon: Users },
