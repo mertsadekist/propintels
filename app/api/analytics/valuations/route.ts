@@ -74,12 +74,13 @@ export async function GET(req: NextRequest) {
     });
 
     // Monthly leads trend — use explicit expressions in GROUP BY
+    // NOTE: `Lead` must be backtick-quoted — LEAD is a reserved word in MySQL 8.0 (window function)
     interface MonthRow { yr: unknown; mo: unknown; cnt: bigint; }
     const monthlyLeads = await prisma.$queryRaw<MonthRow[]>`
       SELECT YEAR(createdAt)  AS yr,
              MONTH(createdAt) AS mo,
              COUNT(*) AS cnt
-      FROM Lead
+      FROM \`Lead\`
       GROUP BY YEAR(createdAt), MONTH(createdAt)
       ORDER BY YEAR(createdAt), MONTH(createdAt)
     `;
