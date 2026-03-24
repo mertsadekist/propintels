@@ -61,10 +61,18 @@ export async function GET(req: NextRequest) {
   const unitType  = sp.get("unitType") || "all";          // all | ready | offplan
   const dateFrom  = sp.get("dateFrom") ? new Date(sp.get("dateFrom")!) : null;
   const dateTo    = sp.get("dateTo")   ? new Date(sp.get("dateTo")!)   : null;
-  const filterArea     = sp.get("area")         || null;
-  const filterPropType = sp.get("propertyType") || null;
-  const filterCategory = sp.get("category")     || null;
   const limit     = Math.min(parseInt(sp.get("limit") || "25"), 50);
+
+  // New multi-value params (comma-separated)
+  const areasStr      = sp.get("areas")         || "";
+  const filterAreas   = areasStr ? areasStr.split(",").filter(Boolean) : [];
+  const propTypesStr  = sp.get("propertyTypes") || sp.get("propertyType") || "";
+  const filterPropTypes = propTypesStr ? propTypesStr.split(",").filter(Boolean) : [];
+  const filterCategory = sp.get("category") || null;
+  const priceMin   = sp.get("priceMin")    ? Number(sp.get("priceMin"))   : null;
+  const priceMax   = sp.get("priceMax")    ? Number(sp.get("priceMax"))   : null;
+  const sqftMin    = sp.get("areaSqftMin") ? Number(sp.get("areaSqftMin")): null;
+  const sqftMax    = sp.get("areaSqftMax") ? Number(sp.get("areaSqftMax")): null;
 
   // ── Base conditions (apply to all modes) ──────────────────────────────
   const base: Prisma.Sql[] = [
@@ -78,13 +86,27 @@ export async function GET(req: NextRequest) {
   if (unitType === "offplan") base.push(Prisma.sql`e.unitType = 'Off-Plan'`);
   if (dateFrom) base.push(Prisma.sql`e.transactionDate >= ${dateFrom}`);
   if (dateTo)   base.push(Prisma.sql`e.transactionDate <= ${dateTo}`);
-  if (filterPropType) base.push(Prisma.sql`e.propertyType = ${filterPropType}`);
-  if (filterCategory) base.push(Prisma.sql`e.category     = ${filterCategory}`);
+  if (filterPropTypes.length === 1) {
+    base.push(Prisma.sql`e.propertyType = ${filterPropTypes[0]}`);
+  } else if (filterPropTypes.length > 1) {
+    const inList = Prisma.join(filterPropTypes.map((t) => Prisma.sql`${t}`), ",");
+    base.push(Prisma.sql`e.propertyType IN (${inList})`);
+  }
+  if (filterCategory) base.push(Prisma.sql`e.category = ${filterCategory}`);
+  if (priceMin !== null) base.push(Prisma.sql`e.transactionPrice >= ${priceMin}`);
+  if (priceMax !== null) base.push(Prisma.sql`e.transactionPrice <= ${priceMax}`);
+  if (sqftMin  !== null) base.push(Prisma.sql`e.areaSqft >= ${sqftMin}`);
+  if (sqftMax  !== null) base.push(Prisma.sql`e.areaSqft <= ${sqftMax}`);
 
   // ── Project mode ──────────────────────────────────────────────────────
   if (mode === "project") {
     const cond = [...base];
-    if (filterArea) cond.push(Prisma.sql`p.location = ${filterArea}`);
+    if (filterAreas.length === 1) {
+      cond.push(Prisma.sql`p.location = ${filterAreas[0]}`);
+    } else if (filterAreas.length > 1) {
+      const areaIn = Prisma.join(filterAreas.map((a) => Prisma.sql`${a}`), ",");
+      cond.push(Prisma.sql`p.location IN (${areaIn})`);
+    }
     const where = Prisma.join(cond, " AND ");
 
     const top = await prisma.$queryRaw<RawTopRow[]>(Prisma.sql`
@@ -130,6 +152,12 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Area mode ─────────────────────────────────────────────────────────
+  if (filterAreas.length === 1) {
+    base.push(Prisma.sql`p.location = ${filterAreas[0]}`);
+  } else if (filterAreas.length > 1) {
+    const areaIn = Prisma.join(filterAreas.map((a) => Prisma.sql`${a}`), ",");
+    base.push(Prisma.sql`p.location IN (${areaIn})`);
+  }
   const where = Prisma.join(base, " AND ");
 
   const top = await prisma.$queryRaw<RawTopRow[]>(Prisma.sql`

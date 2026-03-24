@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, Building2, BarChart2 } from "lucide-react";
-import type { AnalyticsFilters } from "./filters-bar";
+import type { AnalyticsFilters } from "./analytics-filters";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -90,12 +90,16 @@ export function PriceMatrixBox({ filters }: Props) {
       setError(null);
       try {
         const sp = new URLSearchParams({ mode: m, unitType: ut, limit: "25" });
-        if (f.dateFrom)    sp.set("dateFrom",     f.dateFrom);
-        if (f.dateTo)      sp.set("dateTo",       f.dateTo);
-        if (f.propertyType) sp.set("propertyType", f.propertyType);
-        if (f.category)    sp.set("category",     f.category);
-        // area filter only meaningful for project mode
-        if (m === "project" && f.area) sp.set("area", f.area);
+        if (f.dateFrom)               sp.set("dateFrom",      f.dateFrom);
+        if (f.dateTo)                 sp.set("dateTo",        f.dateTo);
+        if (f.propertyTypes.length)   sp.set("propertyTypes", f.propertyTypes.join(","));
+        if (f.category)               sp.set("category",      f.category);
+        if (f.priceMin)               sp.set("priceMin",      f.priceMin);
+        if (f.priceMax)               sp.set("priceMax",      f.priceMax);
+        if (f.areaSqftMin)            sp.set("areaSqftMin",   f.areaSqftMin);
+        if (f.areaSqftMax)            sp.set("areaSqftMax",   f.areaSqftMax);
+        // areas filter: in area mode = restrict rows; in project mode = restrict by location
+        if (f.areas.length)           sp.set("areas",         f.areas.join(","));
 
         const res = await fetch(`/api/analytics/price-matrix?${sp}`);
         if (!res.ok) throw new Error("Failed to load price matrix");
