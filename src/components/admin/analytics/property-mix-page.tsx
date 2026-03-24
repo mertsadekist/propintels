@@ -101,7 +101,7 @@ export function PropertyMixPage() {
                         <Cell key={i} fill={TYPE_COLORS[i % TYPE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number, name: string) => [fmtN(v) + " txns", fmtLabel(name)]} />
+                    <Tooltip formatter={(v: number | undefined, name: string) => [fmtN(v ?? 0) + " txns", fmtLabel(name)]} />
                   </PieChart>
                 </ResponsiveContainer>
                 {/* Summary table */}
@@ -144,7 +144,7 @@ export function PropertyMixPage() {
                         } />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number, name: string) => [fmtN(v) + " txns", name === "Existing" ? "Ready" : name]} />
+                    <Tooltip formatter={(v: number | undefined, name: string) => [fmtN(v ?? 0) + " txns", name === "Existing" ? "Ready" : name]} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="mt-2 space-y-1">

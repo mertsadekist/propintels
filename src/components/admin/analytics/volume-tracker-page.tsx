@@ -108,8 +108,8 @@ export function VolumeTrackerPage() {
                   <YAxis yAxisId="left"  tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={fmtM} />
                   <Tooltip
-                    formatter={(v: number, name: string) => [
-                      name === "totalValue" ? `AED ${fmtM(v)}` : fmtN(v),
+                    formatter={(v: number | undefined, name: string) => [
+                      name === "totalValue" ? `AED ${fmtM(v ?? 0)}` : fmtN(v ?? 0),
                       name === "txnCount" ? "Transactions" : "Total Value",
                     ]}
                   />
