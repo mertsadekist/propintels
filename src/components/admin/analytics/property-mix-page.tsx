@@ -92,8 +92,8 @@ export function PropertyMixPage() {
                   <PieChart>
                     <Pie data={data.byType} dataKey="txnCount" nameKey="propertyType"
                       cx="50%" cy="50%" outerRadius={90} innerRadius={50}
-                      label={({ propertyType, percent }) =>
-                        percent > 0.03 ? `${fmtLabel(propertyType)} ${(percent * 100).toFixed(0)}%` : ""
+                      label={({ name, percent }) =>
+                        (percent ?? 0) > 0.03 ? `${fmtLabel(name as string)} ${((percent ?? 0) * 100).toFixed(0)}%` : ""
                       }
                       labelLine={false}
                     >
@@ -132,8 +132,8 @@ export function PropertyMixPage() {
                   <PieChart>
                     <Pie data={data.byUnitType} dataKey="txnCount" nameKey="unitType"
                       cx="50%" cy="50%" outerRadius={90} innerRadius={50}
-                      label={({ unitType, percent }) =>
-                        `${unitType === "Existing" ? "Ready" : unitType} ${(percent * 100).toFixed(0)}%`
+                      label={({ name, percent }) =>
+                        `${(name as string) === "Existing" ? "Ready" : (name as string)} ${((percent ?? 0) * 100).toFixed(0)}%`
                       }
                       labelLine={false}
                     >
