@@ -74,7 +74,10 @@ export function ValuationInsightsPage() {
     setLoading(true); setError(null);
     try {
       const res  = await fetch(`/api/analytics/valuations?${filtersToParams(f)}`);
-      if (!res.ok) throw new Error("Failed to load");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error?.message || `HTTP ${res.status}`);
+      }
       const json = await res.json();
       setData(json.data);
     } catch (e) { setError(e instanceof Error ? e.message : "Error"); }
