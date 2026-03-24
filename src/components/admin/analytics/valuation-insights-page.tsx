@@ -164,7 +164,7 @@ export function ValuationInsightsPage() {
                     <XAxis type="number" tick={{ fontSize: 11 }} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={82} />
                     <Tooltip
-                      formatter={(v: number | undefined) => [fmtN(v ?? 0), "Leads"]}
+                      formatter={(v) => [fmtN(Number(v) || 0), "Leads"]}
                     />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 11 }}>
                       {funnelData.map((entry, i) => (
@@ -212,7 +212,7 @@ export function ValuationInsightsPage() {
                             <Cell key={i} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(v: number | undefined) => [fmtN(v ?? 0), "Valuations"]} />
+                        <Tooltip formatter={(v) => [fmtN(Number(v) || 0), "Valuations"]} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div className="flex-1 space-y-2">
@@ -247,7 +247,7 @@ export function ValuationInsightsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: number | undefined) => [fmtN(v ?? 0), "Valuations"]} />
+                    <Tooltip formatter={(v) => [fmtN(Number(v) || 0), "Valuations"]} />
                     <Bar dataKey="count" radius={[4,4,0,0]}>
                       {confData.map((entry, i) => {
                         const t = i / (confData.length - 1);
@@ -277,7 +277,7 @@ export function ValuationInsightsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={-40} textAnchor="end" height={60} interval={1} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v: number | undefined) => [fmtN(v ?? 0), "Leads"]} />
+                    <Tooltip formatter={(v) => [fmtN(Number(v) || 0), "Leads"]} />
                     <Bar dataKey="count" fill="#8b5cf6" radius={[3,3,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
