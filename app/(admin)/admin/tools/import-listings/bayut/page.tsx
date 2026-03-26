@@ -278,14 +278,14 @@ export default function BayutImportPage() {
         setBlocked(true);
         setFetchMessage(
           data.message ??
-            "Request blocked by Bayut (Cloudflare). Try again later or enter data manually."
+            "Request blocked by Bayut (Cloudflare). Please try again later or enter data manually."
         );
         return;
       }
 
       if (!data.listings?.length) {
         setFetchMessage(
-          data.message ?? "No listings found on this page."
+          data.message ?? "No listings found on this page. Make sure the URL is a Bayut search results page."
         );
         return;
       }

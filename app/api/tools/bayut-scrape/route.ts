@@ -43,10 +43,10 @@ interface ParsedListing {
   listedDate: string | null;
 }
 
-// Map Bayut property type names to our enum values
+// Map Bayut category names/slugs to our enum values
 function mapPropertyType(raw: string): string {
   const s = raw.toLowerCase().trim();
-  if (s.includes("apartment") || s.includes("flat")) return "APARTMENT";
+  if (s.includes("apartment") || s.includes("flat") || s === "apartments") return "APARTMENT";
   if (s.includes("penthouse")) return "PENTHOUSE";
   if (s.includes("duplex")) return "DUPLEX";
   if (s.includes("townhouse")) return "TOWNHOUSE";
@@ -58,17 +58,18 @@ function mapPropertyType(raw: string): string {
   return "OTHER";
 }
 
-// Convert area to sqft if needed
-function toSqft(value: number, unit?: string): number {
-  if (!unit) return value;
-  const u = unit.toLowerCase();
-  if (u.includes("sqm") || u.includes("m²") || u === "m2" || u === "sq. m.") {
-    return Math.round(value * 10.7639);
-  }
-  return value;
+// Bayut stores area in square metres — always convert to sqft
+function sqmToSqft(sqm: number): number {
+  return Math.round(sqm * 10.7639);
 }
 
-// Recursively search for the listings array in the JSON tree
+function extractInt(v: unknown): number | null {
+  if (typeof v === "number") return isNaN(v) ? null : Math.round(v);
+  if (typeof v === "string") { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
+  return null;
+}
+
+// Recursively search for the listings (hits) array in the JSON tree
 function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
   if (depth > 12 || !obj || typeof obj !== "object") return null;
 
@@ -83,11 +84,11 @@ function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
         "rentPerMonth" in obj[0]
       ) &&
       (
-        "area" in obj[0] ||
-        "rooms" in obj[0] ||
-        "baths" in obj[0] ||
-        "type" in obj[0] ||
-        "externalID" in obj[0]
+        "area"       in obj[0] ||
+        "rooms"      in obj[0] ||
+        "baths"      in obj[0] ||
+        "externalID" in obj[0] ||
+        "category"   in obj[0]
       )
     ) {
       return obj as unknown[];
@@ -97,12 +98,13 @@ function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
 
   const record = obj as Record<string, unknown>;
 
-  // Bayut-specific keys first
+  // Known keys — Bayut-specific paths first
   const knownPaths = [
-    "hits", "properties", "results", "listings", "data",
-    "items", "search_result", "searchResult", "propertyList",
-    "cards", "props", "pageProps", "initialState", "initialProps",
-    "searchResults", "propertyListings", "propertiesCount",
+    "hits", "algolia", "content",
+    "properties", "results", "listings", "data",
+    "items", "searchResult", "searchResults",
+    "propertyList", "cards",
+    "props", "pageProps", "initialState",
   ];
 
   for (const key of knownPaths) {
@@ -112,7 +114,7 @@ function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
     }
   }
 
-  // Deep search all keys
+  // Fallback: deep-search all remaining keys
   for (const key of Object.keys(record)) {
     if (key === "__N_SSP" || key === "__N_SSG" || key === "buildId") continue;
     const found = findListingsArray(record[key], depth + 1);
@@ -122,158 +124,128 @@ function findListingsArray(obj: unknown, depth = 0): unknown[] | null {
   return null;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Extract window.state JSON from HTML ──────────────────────────────────────
+function extractWindowState(html: string): unknown | null {
+  // Bayut embeds all Algolia data as: window.state={...};
+  const marker = "window.state=";
+  const idx = html.indexOf(marker);
+  if (idx === -1) return null;
 
-function extractArea(val: unknown, unitHint?: unknown): number | null {
-  if (!val) return null;
-  if (typeof val === "object") {
-    const o = val as Record<string, unknown>;
-    const v =
-      typeof o.value === "number" ? o.value :
-      typeof o.value === "string" ? parseFloat(o.value) :
-      typeof o.area === "number" ? o.area :
-      null;
-    if (v === null || isNaN(v as number)) return null;
-    const unit = String(o.unit ?? o.unit_en ?? o.measurementUnit ?? unitHint ?? "");
-    return Math.round(toSqft(v as number, unit));
+  const jsonStart = idx + marker.length;
+  const scriptEnd = html.indexOf("</script>", jsonStart);
+  if (scriptEnd === -1) return null;
+
+  let jsonStr = html.slice(jsonStart, scriptEnd).trim();
+  // Strip trailing semicolon
+  if (jsonStr.endsWith(";")) jsonStr = jsonStr.slice(0, -1);
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
   }
-  if (typeof val === "number") {
-    return Math.round(toSqft(val, String(unitHint ?? "")));
-  }
-  if (typeof val === "string") {
-    const n = parseFloat(val);
-    if (!isNaN(n)) return Math.round(toSqft(n, String(unitHint ?? "")));
-  }
-  return null;
 }
 
-function extractInt(v: unknown): number | null {
-  if (typeof v === "number") return isNaN(v) ? null : Math.round(v);
-  if (typeof v === "string") { const n = parseInt(v, 10); return isNaN(n) ? null : n; }
-  if (v && typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (typeof o.value === "number") return Math.round(o.value);
-    if (typeof o.value === "string") { const n = parseInt(o.value, 10); return isNaN(n) ? null : n; }
-    if (typeof o.slug === "string") { const n = parseInt(o.slug, 10); return isNaN(n) ? null : n; }
-    if (typeof o.label === "string") { const n = parseInt(o.label, 10); return isNaN(n) ? null : n; }
-  }
-  return null;
-}
-
-// Parse a single Bayut listing object into ParsedListing
+// ── Parse a single Bayut Algolia hit ────────────────────────────────────────
 function parseHit(hit: Record<string, unknown>): ParsedListing | null {
   try {
-    // ── Price ─────────────────────────────────────────────────────────────────
-    // Bayut uses: price (sale), rentPerYear, rentPerMonth
+    // ── Price ────────────────────────────────────────────────────────────────
+    // Bayut: price (yearly rent or sale price)
     let price: number | null = null;
-    const priceFields = ["price", "rentPerYear", "rentPerMonth", "asking_price", "sale_price"];
-    for (const field of priceFields) {
+    for (const field of ["price", "rentPerYear", "rentPerMonth", "asking_price"]) {
       if (typeof hit[field] === "number") { price = hit[field] as number; break; }
       if (typeof hit[field] === "string") {
         const n = parseFloat(hit[field] as string);
         if (!isNaN(n)) { price = n; break; }
       }
-      if (hit[field] && typeof hit[field] === "object") {
-        const o = hit[field] as Record<string, unknown>;
-        if (typeof o.value === "number") { price = o.value; break; }
-      }
+    }
+    if (!price) return null;
+
+    // ── Area (sqm → sqft) ────────────────────────────────────────────────────
+    // Bayut stores area as a plain number in square metres (e.g. 67.58 sqm = 728 sqft)
+    let areaSqft: number | null = null;
+    if (typeof hit.area === "number" && !isNaN(hit.area) && hit.area > 0) {
+      areaSqft = sqmToSqft(hit.area);
+    } else if (typeof hit.area === "string") {
+      const n = parseFloat(hit.area);
+      if (!isNaN(n) && n > 0) areaSqft = sqmToSqft(n);
     }
 
-    // ── Area ─────────────────────────────────────────────────────────────────
-    // Bayut: area: { value: number, unit: "Sq. Ft." }
-    const areaSqft: number | null =
-      extractArea(hit.area) ??
-      extractArea(hit.size, hit.size_unit) ??
-      extractArea(hit.property_size) ??
-      extractArea(hit.floorArea) ??
-      null;
-
-    // ── Bedrooms ──────────────────────────────────────────────────────────────
+    // ── Bedrooms ─────────────────────────────────────────────────────────────
     // Bayut: rooms (integer)
     const bedrooms: number | null =
       extractInt(hit.rooms) ??
       extractInt(hit.bedrooms) ??
       extractInt(hit.beds) ??
-      extractInt(hit.noOfBedrooms) ??
       null;
 
-    // ── Bathrooms ─────────────────────────────────────────────────────────────
+    // ── Bathrooms ────────────────────────────────────────────────────────────
     // Bayut: baths (integer)
     const bathrooms: number | null =
       extractInt(hit.baths) ??
       extractInt(hit.bathrooms) ??
-      extractInt(hit.noOfBathrooms) ??
       null;
 
-    // ── Property type ─────────────────────────────────────────────────────────
-    // Bayut: type: { nameEn: "Apartment", ... }
+    // ── Property type — from category array ───────────────────────────────────
+    // Bayut: category = [{level:0, name:"Residential"}, {level:1, name:"Apartments"}]
+    // Use level-1 (most specific) category name
     let rawType = "OTHER";
-    if (hit.type) {
-      const pt = hit.type as Record<string, unknown>;
-      rawType = String(pt.nameEn ?? pt.name ?? pt.slug ?? pt);
-    } else if (typeof hit.property_type === "string") {
-      rawType = hit.property_type;
-    } else if (hit.property_type) {
-      const pt = hit.property_type as Record<string, unknown>;
-      rawType = String(pt.nameEn ?? pt.slug ?? pt.name_en ?? pt.name ?? "OTHER");
-    } else if (typeof hit.category === "string") {
-      rawType = hit.category;
+    if (Array.isArray(hit.category) && hit.category.length > 0) {
+      // Find deepest (highest level) category
+      const cats = hit.category as Array<Record<string, unknown>>;
+      const deepest = cats.reduce((prev, cur) =>
+        (Number(cur.level) ?? 0) > (Number(prev.level) ?? 0) ? cur : prev
+      );
+      rawType = String(deepest.nameSingular ?? deepest.name ?? deepest.slug ?? "OTHER");
     }
 
-    // ── Location ──────────────────────────────────────────────────────────────
-    // Bayut: location: [{ name: "Dubai", ... }, { name: "Al Jaddaf", ... }, { name: "Binghatti Avenue", ... }]
+    // ── Location ─────────────────────────────────────────────────────────────
+    // Bayut: location = [{level:0, name:"UAE"}, {level:1, name:"Dubai"}, ...]
+    // Skip level-0 (UAE), use last entry as label, join rest for full location
     let locationLabel = "";
     let fullLocation = "";
 
     if (Array.isArray(hit.location) && hit.location.length > 0) {
-      const locs = hit.location as Array<Record<string, unknown>>;
-      // Last element = most specific (building/community)
-      const last = locs[locs.length - 1];
-      locationLabel = String(last.name ?? last.nameEn ?? last.name_en ?? "");
-      // Full hierarchy joined
-      const parts = locs
-        .map((l) => String(l.name ?? l.nameEn ?? l.name_en ?? ""))
+      const locs = (hit.location as Array<Record<string, unknown>>)
+        .filter((l) => Number(l.level) > 0)  // skip "UAE" country level
+        .map((l) => String(l.name ?? ""))
         .filter(Boolean);
-      fullLocation = parts.join(", ");
-    } else if (hit.location && typeof hit.location === "object") {
-      const loc = hit.location as Record<string, unknown>;
-      locationLabel = String(loc.name ?? loc.nameEn ?? loc.name_en ?? "");
-      fullLocation = String(loc.fullName ?? loc.full_name ?? locationLabel);
-    } else if (typeof hit.community === "string") {
-      locationLabel = hit.community;
-      fullLocation = hit.community;
+
+      if (locs.length > 0) {
+        locationLabel = locs[locs.length - 1];   // most specific (building/area)
+        fullLocation  = locs.join(", ");           // full hierarchy
+      }
     }
 
     // ── Title ─────────────────────────────────────────────────────────────────
-    const title = String(hit.title ?? hit.name ?? hit.headline ?? "");
+    const title = String(hit.title ?? hit.name ?? "");
 
-    // ── Reference ─────────────────────────────────────────────────────────────
-    // Bayut: referenceNumber
+    // ── Reference ────────────────────────────────────────────────────────────
+    // Bayut: referenceNumber (e.g. "105697-WarYqu")
     const reference =
       typeof hit.referenceNumber === "string" ? hit.referenceNumber :
       typeof hit.reference === "string" ? hit.reference :
       null;
 
-    // ── External ID ───────────────────────────────────────────────────────────
-    // Bayut: externalID (string), id (number)
+    // ── External ID ──────────────────────────────────────────────────────────
+    // Bayut: externalID (string), id (number), objectID (string)
     const id =
       typeof hit.externalID === "string" ? hit.externalID :
       typeof hit.externalId === "string" ? hit.externalId :
+      typeof hit.objectID   === "string" ? hit.objectID :
       typeof hit.id === "string" || typeof hit.id === "number" ? String(hit.id) :
       String(Math.random());
 
     // ── Listed date ───────────────────────────────────────────────────────────
-    // Bayut: addedOn (unix timestamp or ISO), publishedAt, createdAt
+    // Bayut: createdAt (Unix timestamp in seconds)
     let listedDate: string | null = null;
-    const dateFields = ["addedOn", "publishedAt", "published_at", "listed_date", "createdAt", "created_at"];
-    for (const field of dateFields) {
-      if (typeof hit[field] === "string" && hit[field]) {
-        listedDate = hit[field] as string;
+    for (const field of ["createdAt", "addedOn", "publishedAt", "published_at", "listed_date"]) {
+      if (typeof hit[field] === "number") {
+        listedDate = new Date((hit[field] as number) * 1000).toISOString();
         break;
       }
-      if (typeof hit[field] === "number") {
-        // Unix timestamp → ISO string
-        listedDate = new Date((hit[field] as number) * 1000).toISOString();
+      if (typeof hit[field] === "string" && hit[field]) {
+        listedDate = hit[field] as string;
         break;
       }
     }
@@ -281,44 +253,37 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
     // ── Furnished ─────────────────────────────────────────────────────────────
     // Bayut: furnishingStatus: "furnished" | "unfurnished" | "partly-furnished"
     const furnished =
-      typeof hit.furnishingStatus === "string" ? hit.furnishingStatus.toUpperCase() :
-      typeof hit.furnished === "string" ? hit.furnished :
-      null;
+      typeof hit.furnishingStatus === "string"
+        ? hit.furnishingStatus.toUpperCase().replace("-", "_")
+        : null;
 
     // ── Completion status ─────────────────────────────────────────────────────
-    // Bayut: completionDetails: { completionStatus: "completed" | "under_construction" }
-    let completionStatus: string | null = null;
-    if (hit.completionDetails && typeof hit.completionDetails === "object") {
-      const cd = hit.completionDetails as Record<string, unknown>;
-      completionStatus = typeof cd.completionStatus === "string" ? cd.completionStatus : null;
-    } else if (typeof hit.completionStatus === "string") {
-      completionStatus = hit.completionStatus;
-    } else if (typeof hit.completion_status === "string") {
-      completionStatus = hit.completion_status;
-    }
+    // Bayut: completionStatus: "completed" | "off_plan"
+    const completionStatus =
+      typeof hit.completionStatus === "string" ? hit.completionStatus :
+      null;
 
     // ── Verified ──────────────────────────────────────────────────────────────
-    // Bayut: verifiedListings, isTrueCheck
+    // Bayut: isVerified boolean, or verification.status === "verified"
     const isVerified =
+      hit.isVerified === true ||
       hit.isTrueCheck === true ||
-      hit.is_verified === true ||
-      hit.verified === true;
+      (hit.verification &&
+        typeof hit.verification === "object" &&
+        (hit.verification as Record<string, unknown>).status === "verified");
 
     // ── isFeatured / AD ───────────────────────────────────────────────────────
-    // Bayut: product: "featured" | "premium" | "superhot" | "hot" | "default"
+    // Bayut: product: "superhot" | "hot" | "featured" | "premium" | "default"
+    // "default" means organic/non-sponsored
     const productStr = typeof hit.product === "string" ? hit.product.toLowerCase() : "";
     const isFeatured =
-      productStr === "featured" ||
-      productStr === "premium" ||
-      productStr === "superhot" ||
-      productStr === "hot" ||
-      hit.featured === true ||
-      hit.isFeatured === true ||
-      hit.promoted === true ||
-      hit.is_featured === true;
-
-    // Need at least a price to be useful
-    if (!price) return null;
+      productStr === "superhot"   ||
+      productStr === "hot"        ||
+      productStr === "featured"   ||
+      productStr === "premium"    ||
+      hit.featured    === true    ||
+      hit.isFeatured  === true    ||
+      hit.promoted    === true;
 
     return {
       externalId: id,
@@ -332,7 +297,7 @@ function parseHit(hit: Record<string, unknown>): ParsedListing | null {
       locationLabel,
       fullLocation,
       isFeatured: Boolean(isFeatured),
-      isVerified,
+      isVerified: Boolean(isVerified),
       isSuperAgent: false,
       furnished,
       completionStatus,
@@ -358,38 +323,38 @@ export async function POST(request: NextRequest) {
 
   const { url } = parsed.data;
 
-  // Fetch with browser-like headers
+  // ── Fetch page ────────────────────────────────────────────────────────────
   let html: string;
   try {
     const res = await fetch(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
+        "Accept-Language":   "en-US,en;q=0.9",
+        "Accept-Encoding":   "gzip, deflate, br",
+        "Cache-Control":     "no-cache",
+        Pragma:              "no-cache",
+        "Sec-Fetch-Dest":    "document",
+        "Sec-Fetch-Mode":    "navigate",
+        "Sec-Fetch-Site":    "none",
         "Upgrade-Insecure-Requests": "1",
-        Referer: "https://www.bayut.com/",
+        Referer:             "https://www.bayut.com/",
       },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(25_000),
     });
 
     if (res.status === 403 || res.status === 429 || res.status === 503) {
       return NextResponse.json({
         blocked: true, listings: [], total: 0,
-        message: "تم حجب الطلب من قبل Bayut (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
+        message: "Request blocked by Bayut (Cloudflare). Please try again later or enter data manually.",
       });
     }
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: { code: "FETCH_ERROR", message: `HTTP ${res.status} من Bayut` } },
+        { error: { code: "FETCH_ERROR", message: `HTTP ${res.status} from Bayut` } },
         { status: 502 }
       );
     }
@@ -398,62 +363,68 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: { code: "FETCH_ERROR", message: `فشل الاتصال: ${msg}` } },
+      { error: { code: "FETCH_ERROR", message: `Connection failed: ${msg}` } },
       { status: 502 }
     );
   }
 
-  // Cloudflare / bot protection check
+  // ── Bot / Cloudflare check ────────────────────────────────────────────────
   if (
     html.includes("cf-browser-verification") ||
     html.includes("cf_chl_") ||
     html.includes("Just a moment") ||
     html.includes("Enable JavaScript and cookies") ||
-    (html.length < 5000 && !html.includes("__NEXT_DATA__"))
+    html.length < 5000
   ) {
     return NextResponse.json({
       blocked: true, listings: [], total: 0,
-      message: "تم حجب الطلب من قبل Bayut (Cloudflare). حاول مرة أخرى لاحقاً أو أدخل البيانات يدوياً.",
+      message: "Request blocked by Bayut (Cloudflare). Please try again later or enter data manually.",
     });
   }
 
-  // ── Attempt 1: extract __NEXT_DATA__ (Next.js SSR) ──────────────────────────
-  let nextData: unknown = null;
-  const nextDataMatch = html.match(
-    /<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/
-  );
-  if (nextDataMatch?.[1]) {
-    try { nextData = JSON.parse(nextDataMatch[1]); } catch { /* ignore */ }
+  // ── Attempt 1: window.state (Bayut's primary data store) ─────────────────
+  let stateData: unknown = extractWindowState(html);
+
+  // ── Attempt 2: __NEXT_DATA__ fallback ────────────────────────────────────
+  if (!stateData) {
+    const m = html.match(
+      /<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/
+    );
+    if (m?.[1]) {
+      try { stateData = JSON.parse(m[1]); } catch { /* ignore */ }
+    }
   }
 
-  // ── Attempt 2: scan all <script> tags for large JSON blobs ──────────────────
-  if (!nextData) {
-    const scriptTagRegex = /<script[^>]*>(\{[\s\S]*?\})<\/script>/g;
-    let scriptMatch: RegExpExecArray | null;
-    while ((scriptMatch = scriptTagRegex.exec(html)) !== null) {
-      const text = scriptMatch[1].trim();
-      if (text.length > 2000) {
+  // ── Attempt 3: any large inline JSON blob ─────────────────────────────────
+  if (!stateData) {
+    const scriptTagRe = /<script[^>]*>([\s\S]*?)<\/script>/g;
+    let sm: RegExpExecArray | null;
+    while ((sm = scriptTagRe.exec(html)) !== null) {
+      const text = sm[1].trim();
+      if (text.length > 10_000 && text.startsWith("{")) {
         try {
           const candidate = JSON.parse(text);
           const arr = findListingsArray(candidate);
-          if (arr && arr.length > 0) { nextData = candidate; break; }
+          if (arr && arr.length > 0) { stateData = candidate; break; }
         } catch { /* skip */ }
       }
     }
   }
 
-  if (!nextData) {
+  if (!stateData) {
     return NextResponse.json({
       blocked: false, listings: [], total: 0,
-      message: "لم يتم العثور على بيانات مهيكلة في الصفحة. ربما تغيرت بنية الموقع أو الصفحة محمية بـ JavaScript.",
+      message:
+        "No structured data found on the page. Bayut may have changed their page structure or the page is protected by JavaScript rendering.",
     });
   }
 
-  const hitsArray = findListingsArray(nextData);
+  const hitsArray = findListingsArray(stateData);
   if (!hitsArray || hitsArray.length === 0) {
     return NextResponse.json({
       blocked: false, listings: [], total: 0,
-      message: "لم يتم العثور على عقارات في هذه الصفحة. تأكد أن الرابط يؤدي إلى صفحة نتائج بحث وليس صفحة تفاصيل عقار.",
+      message:
+        "No listings found on this page. Make sure the URL leads to a search results page (not a single property detail page).",
     });
   }
 
@@ -466,9 +437,16 @@ export async function POST(request: NextRequest) {
   const listings: ParsedListing[] = [];
   for (const hit of hitsArray) {
     if (hit && typeof hit === "object") {
-      const parsedListing = parseHit(hit as Record<string, unknown>);
-      if (parsedListing) listings.push(parsedListing);
+      const listing = parseHit(hit as Record<string, unknown>);
+      if (listing) listings.push(listing);
     }
+  }
+
+  if (listings.length === 0) {
+    return NextResponse.json({
+      blocked: false, listings: [], total: 0,
+      message: "Data was found on the page but no valid listings could be parsed. Please check the URL and try again.",
+    });
   }
 
   return NextResponse.json({
