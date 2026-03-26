@@ -25,6 +25,8 @@ import {
   DollarSign,
   TrendingDown,
   Layers,
+  Building2,
+  Home,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +38,8 @@ interface NavItem {
   icon:     React.ComponentType<{ className?: string }>;
   roles?:   string[];
   children?: NavItem[];
-  exact?:   boolean;  // use exact match for active detection
+  exact?:   boolean;    // use exact match for active detection
+  disabled?: boolean;   // show as coming-soon / non-clickable
 }
 
 // ─── Navigation structure ───────────────────────────────────────────────────
@@ -64,7 +67,17 @@ const NAV_ITEMS: NavItem[] = [
   },
   { label: "Leads",   href: "/admin/leads",   icon: Users },
   { label: "Reports", href: "/admin/reports", icon: FileText },
-  { label: "Import Listings", href: "/admin/tools/import-listings", icon: DatabaseZap, roles: ["ADMIN", "MANAGER"] },
+  {
+    label: "Import Listings",
+    href:  "/admin/tools/import-listings",
+    icon:  DatabaseZap,
+    roles: ["ADMIN", "MANAGER"],
+    children: [
+      { label: "PropertyFinder", href: "/admin/tools/import-listings",         icon: Home,      exact: true, roles: ["ADMIN", "MANAGER"] },
+      { label: "Bayut",          href: "/admin/tools/import-listings/bayut",   icon: Building2,              roles: ["ADMIN", "MANAGER"] },
+      { label: "Dubizzle",       href: "/admin/tools/import-listings/dubizzle",icon: Building2, disabled: true, roles: ["ADMIN", "MANAGER"] },
+    ],
+  },
   { label: "Import DLD",      href: "/admin/tools/import-dld",      icon: FileUp,      roles: ["ADMIN", "MANAGER"] },
   { label: "Team",       href: "/admin/team",     icon: Shield,       roles: ["ADMIN"] },
   { label: "Settings",   href: "/admin/settings", icon: Settings,     roles: ["ADMIN"] },
@@ -82,8 +95,11 @@ export function AdminSidebar({ userRoles }: SidebarProps) {
 
   // Determine if Analytics group starts open (user is on an analytics page)
   const analyticsOpen = pathname.startsWith("/admin/analytics");
+  // Determine if Import Listings group starts open
+  const importOpen = pathname.startsWith("/admin/tools/import-listings");
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({
-    "/admin/analytics": analyticsOpen,
+    "/admin/analytics":              analyticsOpen,
+    "/admin/tools/import-listings":  importOpen,
   });
 
   const canSee = (item: NavItem) =>
@@ -148,6 +164,24 @@ export function AdminSidebar({ userRoles }: SidebarProps) {
                     <ul className="mt-0.5 ml-3 pl-3 border-l border-white/10 space-y-0.5">
                       {visibleChildren.map((child) => {
                         const childIsActive = isItemActive(child);
+
+                        // Disabled / coming-soon item (e.g. Dubizzle)
+                        if (child.disabled) {
+                          return (
+                            <li key={child.href}>
+                              <span
+                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium text-white/25 cursor-not-allowed select-none"
+                              >
+                                <child.icon className="h-3.5 w-3.5 flex-shrink-0" />
+                                <span className="flex-1">{child.label}</span>
+                                <span className="text-[10px] bg-white/10 text-white/35 px-1.5 py-0.5 rounded-full leading-tight">
+                                  Soon
+                                </span>
+                              </span>
+                            </li>
+                          );
+                        }
+
                         return (
                           <li key={child.href}>
                             <Link
