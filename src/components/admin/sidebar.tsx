@@ -75,7 +75,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "PropertyFinder", href: "/admin/tools/import-listings",         icon: Home,      exact: true, roles: ["ADMIN", "MANAGER"] },
       { label: "Bayut",          href: "/admin/tools/import-listings/bayut",   icon: Building2,              roles: ["ADMIN", "MANAGER"] },
-      { label: "Dubizzle",       href: "/admin/tools/import-listings/dubizzle",icon: Building2, disabled: true, roles: ["ADMIN", "MANAGER"] },
+      { label: "Dubizzle",       href: "/admin/tools/import-listings/dubizzle",icon: Building2, roles: ["ADMIN", "MANAGER"] },
     ],
   },
   { label: "Import DLD",      href: "/admin/tools/import-dld",      icon: FileUp,      roles: ["ADMIN", "MANAGER"] },
