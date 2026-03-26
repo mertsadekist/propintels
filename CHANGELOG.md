@@ -13,6 +13,21 @@ The project has not yet reached a stable v1.0 release.
 
 ---
 
+## [0.20.0] — 2026-03-26
+
+### Added
+- **Analytics dashboard quick-links** — Price Trends, Price Changes, and Deal Segments cards added to the analytics overview page quick-link grid. All three pages were already accessible via the sidebar but were not surfaced from the analytics landing card (`analytics-dashboard.tsx`).
+- Analytics grid responsive layout updated from `lg:grid-cols-6` (6 items) to `lg:grid-cols-4 xl:grid-cols-5` (9 items).
+
+### Fixed (Security)
+- **AGENT ownership enforcement on report endpoints** — `GET` and `POST /api/leads/[leadId]/report` now verify that an agent-role user is only accessing reports for leads assigned to them. Previously, any authenticated AGENT could read or regenerate any lead's PDF report.
+- **Async Redis-backed rate limiter on submit** — `POST /api/public/v/[token]/submit` now calls the async `checkRateLimit()` (Redis pipeline, with in-memory fallback) instead of the synchronous `checkRateLimitSync()`. Rate-limit state is now durable across process restarts.
+- **Rate limiting on public PDF download** — `GET /api/public/v/report/[leadId]` enforces 20 downloads per IP per minute to prevent lead ID enumeration and PDF harvesting.
+- **Strict hostname validation in PropertyFinder scraper** — URL check changed from a substring match (`url.includes("propertyfinder.ae")`) to a strict set-based hostname check (`ALLOWED_PROPERTYFINDER_HOSTS`), closing a path-injection bypass where a URL like `https://evil.com/?x=propertyfinder.ae` would have passed.
+- **CSS injection prevention in PDF templates** — `buildReportHtml()` and `buildMarketReportHtml()` now route all branding color values through `sanitizeCssColor()`, which accepts only `#hex`, `rgb()`, and `rgba()` formats. Maliciously crafted branding config values can no longer inject arbitrary CSS into generated PDFs.
+
+---
+
 ## [0.19.0] — 2026-03-17
 
 ### Added

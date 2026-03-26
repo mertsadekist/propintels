@@ -791,7 +791,14 @@ New Lead attributed to this link and the creating agent
 | Path | Method | Auth | Description |
 |------|--------|------|-------------|
 | `/api/dashboard/kpis` | GET | ADMIN, MANAGER | Key performance indicators |
-| `/api/analytics/market` | GET | ADMIN, MANAGER | Market price trends |
+| `/api/analytics/market` | GET | ADMIN, MANAGER | Market summary KPIs + top areas |
+| `/api/analytics/price-trends` | GET | ADMIN, MANAGER | PSF trend over time by price bracket |
+| `/api/analytics/price-change` | GET | ADMIN, MANAGER | YoY & MoM price change by area |
+| `/api/analytics/deal-segments` | GET | ADMIN, MANAGER | Deal size & bedroom distribution |
+| `/api/analytics/price-matrix` | GET | ADMIN, MANAGER | Area × Bedroom PSF heatmap |
+| `/api/analytics/property-mix` | GET | ADMIN, MANAGER | Property type & off-plan breakdown |
+| `/api/analytics/volume` | GET | ADMIN, MANAGER | Monthly transaction volume calendar |
+| `/api/analytics/valuations` | GET | ADMIN, MANAGER | Lead funnel & verdict distribution |
 | `/api/analytics/areas` | GET | ADMIN, MANAGER | PSF analysis by location |
 | `/api/analytics/areas-breakdown` | GET | ADMIN, MANAGER | Detailed area statistics |
 | `/api/analytics/projects` | GET | ADMIN, MANAGER | Per-project performance |
@@ -811,8 +818,9 @@ New Lead attributed to this link and the creating agent
 
 | Path | Method | Auth | Description |
 |------|--------|------|-------------|
-| `/api/tools/pf-scrape` | POST | ADMIN, MANAGER, AGENT | Scrape listings from PropertyFinder |
-| `/api/health` | GET | Public | Health check |
+| `/api/tools/pf-scrape` | POST | ADMIN, MANAGER, AGENT | Scrape listings from PropertyFinder (hostname-validated) |
+| `/api/tools/dld-import` | POST | ADMIN, MANAGER | Bulk import DLD transaction entries |
+| `/api/health` | GET | Public | Health check (DB + Redis + Chrome status) |
 
 ---
 
@@ -826,9 +834,19 @@ New Lead attributed to this link and the creating agent
 | Projects | `/admin/projects` | List + create + stats | All |
 | Entries | `/admin/projects/[id]/entries` | Manage listing & transaction comps | ADMIN, MANAGER, AGENT |
 | Valuation Links | `/admin/projects/[id]/links` | Create / manage public links | ADMIN, MANAGER, AGENT |
-| Analytics | `/admin/analytics` | Market trend charts | ADMIN, MANAGER |
+| Analytics | `/admin/analytics` | Market overview + 9 sub-pages | ADMIN, MANAGER |
+| Analytics — Price Matrix | `/admin/analytics/price-matrix` | Area × Bedroom PSF heatmap | ADMIN, MANAGER |
+| Analytics — Market Trends | `/admin/analytics/market-trends` | Weekly PSF trend chart | ADMIN, MANAGER |
+| Analytics — Area Comparison | `/admin/analytics/area-comparison` | Sortable area ranking table | ADMIN, MANAGER |
+| Analytics — Property Mix | `/admin/analytics/property-mix` | Type & off-plan breakdown | ADMIN, MANAGER |
+| Analytics — Volume Tracker | `/admin/analytics/volume` | Monthly transaction calendar | ADMIN, MANAGER |
+| Analytics — Valuation Insights | `/admin/analytics/valuations` | Lead funnel & verdict distribution | ADMIN, MANAGER |
+| Analytics — Price Trends | `/admin/analytics/price-trends` | PSF by price bracket over time | ADMIN, MANAGER |
+| Analytics — Price Changes | `/admin/analytics/price-change` | YoY & MoM area price shifts | ADMIN, MANAGER |
+| Analytics — Deal Segments | `/admin/analytics/deal-segments` | Deal size & bedroom distribution | ADMIN, MANAGER |
 | Reports | `/admin/reports` | View / download PDFs | ADMIN, MANAGER, AGENT |
 | Import Listings | `/admin/tools/import-listings` | Bulk import from PropertyFinder | ADMIN, MANAGER, AGENT |
+| Import DLD | `/admin/tools/import-dld` | Bulk import DLD transactions | ADMIN, MANAGER |
 | Team | `/admin/team` | Manage users & roles | ADMIN |
 | Settings | `/admin/settings` | Valuation rules + branding | ADMIN |
 | Audit Log | `/admin/audit` | Immutable activity log | ADMIN |
@@ -964,7 +982,16 @@ ist-valuation-platform/
 │
 ├── app/                                  # Next.js App Router
 │   ├── (admin)/admin/                    # Admin dashboard (authenticated)
-│   │   ├── analytics/                    # Market trend charts
+│   │   ├── analytics/                    # Market overview + 9 sub-pages
+│   │   │   ├── price-matrix/             # Area × Bedroom PSF heatmap
+│   │   │   ├── market-trends/            # Weekly PSF trend chart
+│   │   │   ├── area-comparison/          # Sortable area ranking
+│   │   │   ├── property-mix/             # Type & off-plan breakdown
+│   │   │   ├── volume/                   # Monthly transaction calendar
+│   │   │   ├── valuations/               # Lead funnel & verdicts
+│   │   │   ├── price-trends/             # PSF by price bracket over time
+│   │   │   ├── price-change/             # YoY & MoM area price shifts
+│   │   │   └── deal-segments/            # Deal size & bedroom distribution
 │   │   ├── audit/                        # Immutable audit log
 │   │   ├── leads/[leadId]/               # Lead detail (triple valuation cards)
 │   │   ├── projects/[projectId]/
@@ -975,7 +1002,9 @@ ist-valuation-platform/
 │   │   │   ├── branding/                 # Company branding settings
 │   │   │   └── valuation-rules/          # Engine configuration
 │   │   ├── team/                         # User management
-│   │   └── tools/import-listings/        # PropertyFinder bulk import
+│   │   └── tools/
+│   │       ├── import-listings/          # PropertyFinder bulk import
+│   │       └── import-dld/               # DLD transaction bulk import
 │   ├── (auth)/                           # Login & password reset pages
 │   ├── (public)/v/[token]/               # Public 3-step valuation form
 │   └── api/                              # API routes
@@ -1032,4 +1061,4 @@ This project is proprietary software owned by **IST Valuation**. All rights rese
 
 ---
 
-*Last updated: March 2026*
+*Last updated: 2026-03-26 — v0.20.0*
