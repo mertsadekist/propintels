@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/prisma";
+import { checkRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,22 @@ export const dynamic = "force-dynamic";
  * Streams the PDF directly from the database (no S3/R2 needed).
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
+  // Rate limit: 20 downloads per IP per minute to prevent enumeration/abuse
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+  const rateLimit = await checkRateLimit(`report-dl:${ip}`, 20, 60);
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: { code: "RATE_LIMITED", message: "Too many requests. Please wait before trying again." } },
+      { status: 429 }
+    );
+  }
+
   const report = await prisma.report.findFirst({
     where: { leadId: params.leadId },
     orderBy: { createdAt: "desc" },

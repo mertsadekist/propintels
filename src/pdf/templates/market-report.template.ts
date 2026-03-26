@@ -80,7 +80,23 @@ export interface MarketReportData {
   filters: MarketReportFilters;
 }
 
+// Validate CSS color values to prevent CSS injection via branding config.
+function sanitizeCssColor(value: string | null | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const v = value.trim();
+  if (
+    /^#[0-9a-fA-F]{3,8}$/.test(v) ||
+    /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/.test(v) ||
+    /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\)$/.test(v)
+  ) {
+    return v;
+  }
+  return fallback;
+}
+
 export function buildMarketReportHtml(data: MarketReportData, branding: BrandingConfig): string {
+  const primaryColor = sanitizeCssColor(branding.primaryColor, "#1d4ed8");
+  const accentColor = sanitizeCssColor(branding.accentColor ?? branding.primaryColor, primaryColor);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -105,17 +121,17 @@ export function buildMarketReportHtml(data: MarketReportData, branding: Branding
       justify-content: space-between;
       align-items: flex-start;
       padding-bottom: 12px;
-      border-bottom: 3px solid ${branding.primaryColor};
+      border-bottom: 3px solid ${primaryColor};
       margin-bottom: 20px;
     }
-    .header-company { font-size: 19pt; font-weight: 700; color: ${branding.primaryColor}; }
+    .header-company { font-size: 19pt; font-weight: 700; color: ${primaryColor}; }
     .header-meta { text-align: right; font-size: 9pt; color: #666; }
     .header-meta strong { color: #333; }
     .section-title {
       font-size: 12pt;
       font-weight: 700;
-      color: ${branding.primaryColor};
-      border-left: 4px solid ${branding.accentColor ?? branding.primaryColor};
+      color: ${primaryColor};
+      border-left: 4px solid ${accentColor};
       padding-left: 10px;
       margin: 22px 0 10px;
     }
@@ -133,11 +149,11 @@ export function buildMarketReportHtml(data: MarketReportData, branding: Branding
       text-align: center;
     }
     .kpi-label { font-size: 7.5pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-    .kpi-value { font-size: 15pt; font-weight: 700; color: ${branding.primaryColor}; margin-top: 4px; }
+    .kpi-value { font-size: 15pt; font-weight: 700; color: ${primaryColor}; margin-top: 4px; }
     .kpi-sub { font-size: 8pt; color: #9ca3af; margin-top: 2px; }
     table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 16px; }
     th {
-      background: ${branding.primaryColor};
+      background: ${primaryColor};
       color: #fff;
       padding: 6px 8px;
       text-align: left;

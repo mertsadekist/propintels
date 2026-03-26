@@ -2,6 +2,22 @@ import type { BrandingConfig, ReportData } from "./types";
 
 const SQM_TO_SQFT = 10.7639;
 
+// Validate CSS color values to prevent CSS injection via branding config.
+// Only hex (#RGB, #RRGGBB, #RRGGBBAA), rgb(), and rgba() are accepted.
+// Falls back to the provided default if the value is invalid.
+function sanitizeCssColor(value: string | null | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const v = value.trim();
+  if (
+    /^#[0-9a-fA-F]{3,8}$/.test(v) ||
+    /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/.test(v) ||
+    /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\)$/.test(v)
+  ) {
+    return v;
+  }
+  return fallback;
+}
+
 const VERDICT_LABELS: Record<string, string> = {
   ALIGNED: "Fair Market Value",
   BELOW_MARKET: "Below Market",
@@ -19,6 +35,8 @@ const VERDICT_COLORS: Record<string, string> = {
 };
 
 export function buildReportHtml(data: ReportData, branding: BrandingConfig): string {
+  const primaryColor = sanitizeCssColor(branding.primaryColor, "#1d4ed8");
+  const accentColor = sanitizeCssColor(branding.accentColor ?? branding.primaryColor, primaryColor);
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -45,17 +63,17 @@ export function buildReportHtml(data: ReportData, branding: BrandingConfig): str
       justify-content: space-between;
       align-items: center;
       padding-bottom: 10px;
-      border-bottom: 3px solid ${branding.primaryColor};
+      border-bottom: 3px solid ${primaryColor};
       margin-bottom: 16px;
     }
-    .header-company { font-size: 18pt; font-weight: 700; color: ${branding.primaryColor}; }
+    .header-company { font-size: 18pt; font-weight: 700; color: ${primaryColor}; }
     .header-meta { text-align: right; font-size: 8.5pt; color: #666; }
     .header-meta .report-date { font-weight: 600; color: #333; }
     .section-title {
       font-size: 12pt;
       font-weight: 700;
-      color: ${branding.primaryColor};
-      border-left: 4px solid ${branding.accentColor ?? branding.primaryColor};
+      color: ${primaryColor};
+      border-left: 4px solid ${accentColor};
       padding-left: 10px;
       margin: 18px 0 10px;
     }
@@ -102,7 +120,7 @@ export function buildReportHtml(data: ReportData, branding: BrandingConfig): str
     .val-card-price {
       font-size: 14pt;
       font-weight: 800;
-      color: ${branding.primaryColor};
+      color: ${primaryColor};
       margin-bottom: 4px;
     }
     .val-card-psf { font-size: 8pt; color: #666; margin-bottom: 8px; }
@@ -130,7 +148,7 @@ export function buildReportHtml(data: ReportData, branding: BrandingConfig): str
     /* Analysis table */
     table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 14px; }
     th {
-      background: ${branding.primaryColor};
+      background: ${primaryColor};
       color: #fff;
       padding: 6px 9px;
       text-align: left;
@@ -156,7 +174,7 @@ export function buildReportHtml(data: ReportData, branding: BrandingConfig): str
       content: "▸";
       position: absolute;
       left: 0;
-      color: ${branding.primaryColor};
+      color: ${primaryColor};
     }
     .footer {
       margin-top: 20px;
@@ -173,7 +191,7 @@ export function buildReportHtml(data: ReportData, branding: BrandingConfig): str
       color: #444;
       margin: 14px 0 8px;
       padding-left: 6px;
-      border-left: 3px solid ${branding.accentColor ?? branding.primaryColor}44;
+      border-left: 3px solid ${accentColor}44;
     }
   </style>
 </head>

@@ -2,9 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/auth/session";
 import { z } from "zod";
 
+const ALLOWED_PROPERTYFINDER_HOSTS = new Set([
+  "www.propertyfinder.ae",
+  "propertyfinder.ae",
+]);
+
 const bodySchema = z.object({
   url: z.string().url().refine(
-    (u) => u.includes("propertyfinder.ae"),
+    (u) => {
+      try {
+        const parsed = new URL(u);
+        return (
+          ALLOWED_PROPERTYFINDER_HOSTS.has(parsed.hostname) &&
+          (parsed.protocol === "https:" || parsed.protocol === "http:")
+        );
+      } catch {
+        return false;
+      }
+    },
     "URL must be from propertyfinder.ae"
   ),
 });

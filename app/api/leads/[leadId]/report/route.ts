@@ -9,8 +9,26 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
-  const { error } = await withAuth(["ADMIN", "MANAGER", "AGENT"]);
+  const { error, session } = await withAuth(["ADMIN", "MANAGER", "AGENT"]);
   if (error) return error;
+
+  // AGENT role: enforce ownership — agents may only access their own leads
+  if (
+    session.user.roles.includes("AGENT") &&
+    !session.user.roles.includes("ADMIN") &&
+    !session.user.roles.includes("MANAGER")
+  ) {
+    const lead = await prisma.lead.findUnique({
+      where: { id: params.leadId },
+      select: { assignedAgentId: true },
+    });
+    if (!lead || lead.assignedAgentId !== session.user.id) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Access denied" } },
+        { status: 403 }
+      );
+    }
+  }
 
   const report = await prisma.report.findFirst({
     where: { leadId: params.leadId },
@@ -39,12 +57,12 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: { leadId: string } }
 ) {
-  const { error } = await withAuth(["ADMIN", "MANAGER", "AGENT"]);
+  const { error, session } = await withAuth(["ADMIN", "MANAGER", "AGENT"]);
   if (error) return error;
 
   const lead = await prisma.lead.findUnique({
     where: { id: params.leadId },
-    select: { id: true, fullName: true },
+    select: { id: true, fullName: true, assignedAgentId: true },
   });
 
   if (!lead) {
@@ -52,6 +70,20 @@ export async function POST(
       { error: { code: "NOT_FOUND", message: "Lead not found" } },
       { status: 404 }
     );
+  }
+
+  // AGENT role: enforce ownership — agents may only generate reports for their own leads
+  if (
+    session.user.roles.includes("AGENT") &&
+    !session.user.roles.includes("ADMIN") &&
+    !session.user.roles.includes("MANAGER")
+  ) {
+    if (lead.assignedAgentId !== session.user.id) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Access denied" } },
+        { status: 403 }
+      );
+    }
   }
 
   // Create or reset the report record

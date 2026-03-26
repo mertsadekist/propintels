@@ -5,7 +5,7 @@ import { runValuationEngine } from "@/valuation/engine";
 import { valuationOutputToSnapshot } from "@/valuation/types";
 import { settingsRepo } from "@/db/repositories/settings.repo";
 import { enqueueReportGeneration } from "@/jobs/queue";
-import { checkRateLimitSync } from "@/lib/ratelimit";
+import { checkRateLimit } from "@/lib/ratelimit";
 import type { ComparableEntry } from "@/valuation/types";
 
 export async function POST(
@@ -19,7 +19,7 @@ export async function POST(
     request.headers.get("x-real-ip") ??
     "unknown";
 
-  const rateLimit = checkRateLimitSync(`submit:${ip}`, 5, 60_000);
+  const rateLimit = await checkRateLimit(`submit:${ip}`, 5, 60);
   if (!rateLimit.success) {
     return NextResponse.json(
       { error: { code: "RATE_LIMITED", message: "Too many requests. Please wait before trying again." } },

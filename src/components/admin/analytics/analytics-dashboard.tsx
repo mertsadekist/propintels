@@ -47,12 +47,15 @@ function WoWIndicator({ pct }: { pct: number | null }) {
 }
 
 const QUICK_LINKS = [
-  { label: "Price Matrix",       href: "/admin/analytics/price-matrix",    desc: "Area × Bedroom heatmap",      color: "bg-blue-50  text-blue-700  border-blue-200"  },
-  { label: "Market Trends",      href: "/admin/analytics/market-trends",   desc: "Weekly PSF trend chart",       color: "bg-green-50 text-green-700 border-green-200" },
-  { label: "Area Comparison",    href: "/admin/analytics/area-comparison", desc: "Sortable area ranking table",  color: "bg-violet-50 text-violet-700 border-violet-200"},
-  { label: "Property Mix",       href: "/admin/analytics/property-mix",    desc: "Type & Off-Plan breakdown",    color: "bg-orange-50 text-orange-700 border-orange-200"},
-  { label: "Volume Tracker",     href: "/admin/analytics/volume",          desc: "Monthly transaction calendar", color: "bg-teal-50  text-teal-700  border-teal-200"  },
-  { label: "Valuation Insights", href: "/admin/analytics/valuations",      desc: "Lead funnel & verdicts",       color: "bg-pink-50  text-pink-700  border-pink-200"  },
+  { label: "Price Matrix",       href: "/admin/analytics/price-matrix",    desc: "Area × Bedroom heatmap",          color: "bg-blue-50   text-blue-700   border-blue-200"   },
+  { label: "Market Trends",      href: "/admin/analytics/market-trends",   desc: "Weekly PSF trend chart",           color: "bg-green-50  text-green-700  border-green-200"  },
+  { label: "Area Comparison",    href: "/admin/analytics/area-comparison", desc: "Sortable area ranking table",      color: "bg-violet-50 text-violet-700 border-violet-200" },
+  { label: "Property Mix",       href: "/admin/analytics/property-mix",    desc: "Type & Off-Plan breakdown",        color: "bg-orange-50 text-orange-700 border-orange-200" },
+  { label: "Volume Tracker",     href: "/admin/analytics/volume",          desc: "Monthly transaction calendar",     color: "bg-teal-50   text-teal-700   border-teal-200"   },
+  { label: "Valuation Insights", href: "/admin/analytics/valuations",      desc: "Lead funnel & verdicts",           color: "bg-pink-50   text-pink-700   border-pink-200"   },
+  { label: "Price Trends",       href: "/admin/analytics/price-trends",    desc: "Price brackets over time",         color: "bg-sky-50    text-sky-700    border-sky-200"    },
+  { label: "Price Changes",      href: "/admin/analytics/price-change",    desc: "YoY & MoM area price shifts",      color: "bg-red-50    text-red-700    border-red-200"    },
+  { label: "Deal Segments",      href: "/admin/analytics/deal-segments",   desc: "Deal size & bedroom distribution", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
 ];
 
 export function AnalyticsDashboard() {
@@ -172,7 +175,7 @@ export function AnalyticsDashboard() {
           {/* ── Quick links to sub-pages ────────────────────────────────── */}
           <div>
             <h2 className="text-sm font-semibold text-gray-600 mb-3">Analytics Sections</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {QUICK_LINKS.map(({ label, href, desc, color }) => (
                 <Link
                   key={href}
