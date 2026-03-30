@@ -62,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Valuation Insights",  href: "/admin/analytics/valuations",     icon: BrainCircuit,  roles: ["ADMIN", "MANAGER"] },
       { label: "Price Trends",        href: "/admin/analytics/price-trends",   icon: DollarSign,    roles: ["ADMIN", "MANAGER"] },
       { label: "Price Changes",       href: "/admin/analytics/price-change",   icon: TrendingDown,  roles: ["ADMIN", "MANAGER"] },
+      { label: "Price Forecast",      href: "/admin/analytics/price-forecast", icon: TrendingUp,    roles: ["ADMIN", "MANAGER"] },
       { label: "Deal Segments",       href: "/admin/analytics/deal-segments",  icon: Layers,        roles: ["ADMIN", "MANAGER"] },
     ],
   },
